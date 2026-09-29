@@ -10,18 +10,19 @@ import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.MarkupChecker;
 import java.io.Serializable;
 import java.util.Comparator;
-import java.util.ResourceBundle;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Index;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.Table;
-import javax.persistence.Transient;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 /**
  *
@@ -193,6 +194,22 @@ public class DatasetFieldValue implements Serializable {
         dsfv.setValue(value);
                      
         return dsfv;
-    }    
+    }
     
+    /**
+     * Compares this DatasetFieldValue with another for equality based on their values.
+     * 
+     * @param other The DatasetFieldValue to compare with
+     * @return true if both values are equal (case-sensitive), false otherwise
+     */
+    public boolean valuesEqual(DatasetFieldValue other) {
+        if (this == other) {
+            return true;
+        }
+        if (other == null) {
+            return false;
+        }
+        return Strings.CS.equals(this.getValue(), other.getValue());
+    }
+
 }

@@ -11,7 +11,9 @@ import edu.harvard.iq.dataverse.authorization.groups.GroupServiceBean;
 import edu.harvard.iq.dataverse.authorization.groups.impl.builtin.AuthenticatedUsers;
 import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroup;
 import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroupServiceBean;
+import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.authorization.users.User;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.PermissionException;
 import edu.harvard.iq.dataverse.engine.command.impl.AssignRoleCommand;
@@ -22,6 +24,11 @@ import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
 import edu.harvard.iq.dataverse.util.StringUtil;
+import edu.harvard.iq.dataverse.util.SystemConfig;
+import edu.harvard.iq.dataverse.util.URLTokenUtil;
+import edu.harvard.iq.dataverse.util.UrlSignerUtil;
+import edu.harvard.iq.dataverse.util.signing.ApiSigningSecretServiceBean;
+
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,18 +36,18 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.event.ActionEvent;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
+
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.event.ActionEvent;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.apache.commons.text.StringEscapeUtils;
 
 /**
@@ -54,7 +61,11 @@ public class ManagePermissionsPage implements java.io.Serializable {
     private static final Logger logger = Logger.getLogger(ManagePermissionsPage.class.getCanonicalName());
 
     @EJB
+    transient ApiSigningSecretServiceBean signingSecretService;
+    @EJB
     DvObjectServiceBean dvObjectService;
+    @EJB
+    FileAccessRequestServiceBean fileAccessRequestService;
     @EJB
     DataverseRoleServiceBean roleService;
     @EJB
@@ -159,10 +170,11 @@ public class ManagePermissionsPage implements java.io.Serializable {
         List<RoleAssignmentRow> raList = null;
         if (dvObject != null && dvObject.getId() != null) {
             Set<RoleAssignment> ras = roleService.rolesAssignments(dvObject);
+            List<DataverseRole> availableRoles = getAvailableRoles();
             raList = new ArrayList<>(ras.size());
             for (RoleAssignment roleAssignment : ras) {
-                // for files, only show role assignments which can download
-                if (!(dvObject instanceof DataFile) || roleAssignment.getRole().permissions().contains(Permission.DownloadFile)) {
+                // only show roles that are available for this DVObject
+                if (availableRoles.contains(roleAssignment.getRole())) {
                     RoleAssignee roleAssignee = roleAssigneeService.getRoleAssignee(roleAssignment.getAssigneeIdentifier());
                     if (roleAssignee != null) {
                         raList.add(new RoleAssignmentRow(roleAssignment, roleAssignee.getDisplayInfo()));
@@ -172,6 +184,7 @@ public class ManagePermissionsPage implements java.io.Serializable {
                 }
             }
         }
+        roleAssignmentHistory = null; // Reset the history
         return raList;
     }
 
@@ -191,7 +204,7 @@ public class ManagePermissionsPage implements java.io.Serializable {
             commandEngine.submit(new RevokeRoleCommand(ra, dvRequestService.getDataverseRequest()));
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("permission.roleWasRemoved", Arrays.asList(ra.getRole().getName(), roleAssigneeService.getRoleAssignee(ra.getAssigneeIdentifier()).getDisplayInfo().getTitle())));
             RoleAssignee assignee = roleAssigneeService.getRoleAssignee(ra.getAssigneeIdentifier());
-            notifyRoleChange(assignee, UserNotification.Type.REVOKEROLE);
+            notifyRoleChange(assignee, UserNotification.Type.REVOKEROLE, ra.getRole());
         } catch (PermissionException ex) {
             JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("permission.roleNotAbleToBeRemoved"), BundleUtil.getStringFromBundle("permission.permissionsMissing", Arrays.asList(ex.getRequiredPermissions().toString())));
         } catch (CommandException ex) {
@@ -228,6 +241,18 @@ public class ManagePermissionsPage implements java.io.Serializable {
     public void editRole(String roleId) {
         setRole(roleService.find(Long.parseLong(roleId)));
     }
+    
+    /** Role Assignment History */
+    private List<DataverseRoleServiceBean.RoleAssignmentHistoryConsolidatedEntry> roleAssignmentHistory;
+
+    public List<DataverseRoleServiceBean.RoleAssignmentHistoryConsolidatedEntry> getRoleAssignmentHistory() {
+        
+        if (roleAssignmentHistory == null) {
+            roleAssignmentHistory = roleService.getRoleAssignmentHistory(dvObject.getId());
+        }
+        return roleAssignmentHistory;
+    }
+    
 
     /*
     ============================================================================
@@ -419,7 +444,16 @@ public class ManagePermissionsPage implements java.io.Serializable {
                 }
 
             } else if (dvObject instanceof DataFile) {
-                roles.add(roleService.findBuiltinRoleByAlias(DataverseRole.FILE_DOWNLOADER));
+                // only show roles that have File level permissions
+                // current the available roles for a file are gotten from its parent's parent                
+                for (DataverseRole role : roleService.availableRoles(dvObject.getOwner().getOwner().getId())) {
+                    for (Permission permission : role.permissions()) {
+                        if (permission.appliesTo(DataFile.class)) {
+                            roles.add(role);
+                            break;
+                        }
+                    }
+                }
             }
 
             Collections.sort(roles, DataverseRole.CMP_BY_NAME);
@@ -493,17 +527,21 @@ public class ManagePermissionsPage implements java.io.Serializable {
      * Will notify all members of a group.
      * @param ra The {@code RoleAssignee} to be notified.
      * @param type The type of notification.
+     * @param r The {@code DataverseRole} associated with the change
      */
-    private void notifyRoleChange(RoleAssignee ra, UserNotification.Type type) {
+    private void notifyRoleChange(RoleAssignee ra, UserNotification.Type type, DataverseRole r) {
+        String additionalInfo = r != null ? String.format("{ roleId: %d, roleName: %s }", r.getId(), r.getName()) : null;
         if (ra instanceof AuthenticatedUser) {
-            userNotificationService.sendNotification((AuthenticatedUser) ra, new Timestamp(new Date().getTime()), type, dvObject.getId());
+            userNotificationService.sendNotification((AuthenticatedUser) ra, new Timestamp(new Date().getTime()), type,
+                    dvObject.getId(), null, null, false, additionalInfo);
         } else if (ra instanceof ExplicitGroup) {
             ExplicitGroup eg = (ExplicitGroup) ra;
             Set<String> explicitGroupMembers = eg.getContainedRoleAssgineeIdentifiers();
             for (String id : explicitGroupMembers) {
                 RoleAssignee explicitGroupMember = roleAssigneeService.getRoleAssignee(id);
                 if (explicitGroupMember instanceof AuthenticatedUser) {
-                    userNotificationService.sendNotification((AuthenticatedUser) explicitGroupMember, new Timestamp(new Date().getTime()), type, dvObject.getId());
+                    userNotificationService.sendNotification((AuthenticatedUser) explicitGroupMember, new Timestamp(new Date().getTime()), type,
+                            dvObject.getId(), null, null, false, additionalInfo);
                 }
             }
         }
@@ -521,11 +559,11 @@ public class ManagePermissionsPage implements java.io.Serializable {
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("permission.roleAssignedToFor", args));
             // don't notify if role = file downloader and object is not released
             if (!(r.getAlias().equals(DataverseRole.FILE_DOWNLOADER) && !dvObject.isReleased()) ){
-                notifyRoleChange(ra, UserNotification.Type.ASSIGNROLE);
+                notifyRoleChange(ra, UserNotification.Type.ASSIGNROLE, r);
             }
 
         } catch (PermissionException ex) {
-            JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("permission.roleNotAbleToBeAssigned"),  BundleUtil.getStringFromBundle("permission.permissionsMissing" , Arrays.asList(ex.getRequiredPermissions().toString())));
+            JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("permission.roleNotAbleToBeAssigned"), BundleUtil.getStringFromBundle("permission.permissionsMissing", Arrays.asList(ex.getRequiredPermissions().toString())));
         } catch (CommandException ex) {
             List<String> args = Arrays.asList(
                     r.getName(),
@@ -662,6 +700,61 @@ public class ManagePermissionsPage implements java.io.Serializable {
 
     public void setRenderRoleMessages(Boolean renderRoleMessages) {
         this.renderRoleMessages = renderRoleMessages;
+    }
+    
+    public String getSignedUrlForRAHistoryCsv() {
+        String apiPath;
+        //Including /v1 in these urls is required for the signature to validate
+        if (dvObject instanceof Dataverse dv) {
+            // For Dataverses, use the dataverses API endpoint with the alias
+            apiPath = "/api/v1/dataverses/" + dv.getAlias() + "/assignments/history";
+        } else if (dvObject instanceof Dataset) {
+            // For Datasets, use the datasets API endpoint with the ID
+            apiPath = "/api/v1/datasets/" + dvObject.getId() + "/assignments/history";
+        } else {
+            // For other types (like DataFile), return null or a default path
+            return null;
+        }
+        
+        try {
+            // Get the application URL from the system config
+            String baseUrl = SystemConfig.getDataverseSiteUrlStatic();
+            if (baseUrl.endsWith("/")) {
+                baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+            }
+            
+            // Construct the full URL
+            String fullApiPath = baseUrl + apiPath;
+            
+            // Generate a signed URL with the user's API token
+            User user = session.getUser();
+            String key = null;
+            String userId=null;
+            if (user instanceof AuthenticatedUser authUser) {
+                userId = authUser.getUserIdentifier();
+                ApiToken apiToken = authenticationService.findApiTokenByUser(authUser);
+                
+                if (apiToken != null && !apiToken.isExpired() && !apiToken.isDisabled()) {
+                    key = apiToken.getTokenString();
+                }
+            }
+            if (key != null) {
+                return UrlSignerUtil.signUrl(fullApiPath, 10, userId, "GET", signingSecretService.getSigningKey(key));
+            }
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error generating signed URL for permissions history CSV: " + e.getMessage(), e);
+            return null;
+        }
+        return null;
+    }
+    
+    public String getPermissionsHistoryFilename() {
+        if (dvObject instanceof Dataverse dv) {
+            return dv.getAlias() + "_permissions_history.csv";
+        } else {
+            // For datasets, replace colons in the PID with underscores
+            return dvObject.getGlobalId().asString().replace(":", "_") + "_permissions_history.csv";
+        }
     }
 
     // inner class used for display of role assignments

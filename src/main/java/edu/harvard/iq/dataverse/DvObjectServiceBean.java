@@ -1,6 +1,9 @@
 package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.pidproviders.PidProvider;
+import edu.harvard.iq.dataverse.pidproviders.PidProviderFactoryBean;
+import edu.harvard.iq.dataverse.pidproviders.PidUtil;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
@@ -10,17 +13,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.Stateless;
-import javax.ejb.TransactionAttribute;
-import static javax.ejb.TransactionAttributeType.REQUIRES_NEW;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.NoResultException;
-import javax.persistence.NonUniqueResultException;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
+
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.ejb.TransactionAttribute;
+import static jakarta.ejb.TransactionAttributeType.REQUIRES_NEW;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
+import jakarta.persistence.NonUniqueResultException;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+
 import org.apache.commons.lang3.StringUtils;
-import org.ocpsoft.common.util.Strings;
+import org.eclipse.persistence.exceptions.DatabaseException;
 
 /**
  * Your goto bean for everything {@link DvObject}, that's not tied to any
@@ -34,6 +40,9 @@ public class DvObjectServiceBean implements java.io.Serializable {
 
     @PersistenceContext(unitName = "VDCNet-ejbPU")
     private EntityManager em;
+    
+    @EJB
+    PidProviderFactoryBean pidProviderFactoryBean;
     
     private static final Logger logger = Logger.getLogger(DvObjectServiceBean.class.getCanonicalName());
     /**
@@ -73,53 +82,127 @@ public class DvObjectServiceBean implements java.io.Serializable {
         return query.getResultList();
     }
     
-    public boolean checkExists(Long id) {
-        Query query = em.createNamedQuery("DvObject.checkExists");
-        query.setParameter("id", id);
-        Long result =(Long)query.getSingleResult();
-        return result > 0;
-    }   
-    // FIXME This type-by-string has to go, in favor of passing a class parameter.
-    public DvObject findByGlobalId(String globalIdString, String typeString) {
-        return findByGlobalId(globalIdString, typeString, false);
-    }
-    
-        // FIXME This type-by-string has to go, in favor of passing a class parameter.
-    public DvObject findByGlobalId(String globalIdString, String typeString, Boolean altId) {
-
+    public String getDtype(Long id) {
+        Query query = em.createNativeQuery("SELECT dvo.dtype FROM dvobject dvo WHERE dvo.id=?");
+        query.setParameter(1, id);
         try {
-            GlobalId gid = new GlobalId(globalIdString);
-
-            DvObject foundDvObject = null;
-            try {
-                Query query;                                
-                if (altId) {
-                   query = em.createNamedQuery("DvObject.findByAlternativeGlobalId"); 
-                } else{
-                   query = em.createNamedQuery("DvObject.findByGlobalId");
-                }
-                query.setParameter("identifier", gid.getIdentifier());
-                query.setParameter("protocol", gid.getProtocol());
-                query.setParameter("authority", gid.getAuthority());
-                query.setParameter("dtype", typeString);
-                foundDvObject = (DvObject) query.getSingleResult();
-            } catch (javax.persistence.NoResultException e) {
-                // (set to .info, this can fill the log file with thousands of
-                // these messages during a large harvest run)
-                logger.fine("no dvObject found: " + globalIdString);
-                // DO nothing, just return null.
-                return null;
-            } catch (Exception ex) {
-                logger.info("Exception caught in findByGlobalId: " + ex.getLocalizedMessage());
-                return null;
-            }
-            return foundDvObject;
-
-        } catch (IllegalArgumentException iae) {
-            logger.info("Invalid identifier: " + globalIdString);
+            return (String) query.getSingleResult();
+        } catch (NoResultException e) {
             return null;
         }
     }
+
+    public DvObject findByGlobalId(String globalIdString, DvObject.DType dtype) {
+        try {
+            GlobalId gid = PidUtil.parseAsGlobalID(globalIdString);
+            return findByGlobalId(gid, dtype);
+        } catch (IllegalArgumentException iae) {
+            logger.fine("Invalid identifier: " + globalIdString);
+            return null;
+        }
+
+    }
+    
+    public DvObject findByAltGlobalId(String globalIdString, DvObject.DType dtype) {
+        try {
+            GlobalId gid = PidUtil.parseAsGlobalID(globalIdString);
+            return findByAltGlobalId(gid, dtype);
+        } catch (IllegalArgumentException iae) {
+            logger.fine("Invalid alternate identifier: " + globalIdString);
+            return null;
+        }
+
+    }
+
+    public DvObject findByGlobalId(GlobalId globalId, DvObject.DType dtype) {
+        Query query = em.createNamedQuery("DvObject.findByGlobalId");
+        return runFindByGlobalId(query, globalId, dtype);
+    }
+
+    public DvObject findByAltGlobalId(GlobalId globalId, DvObject.DType dtype) {
+        Query query = em.createNamedQuery("DvObject.findByAlternativeGlobalId");
+        return runFindByGlobalId(query, globalId, dtype);
+    }
+
+    public Long findIdByGlobalId(GlobalId globalId, DvObject.DType dtype) {
+        Query query = em.createNamedQuery("DvObject.findIdByGlobalId");
+        return runFindIdByGlobalId(query, globalId, dtype);
+    }
+
+    public Long findIdByAltGlobalId(GlobalId globalId, DvObject.DType dtype) {
+        Query query = em.createNamedQuery("DvObject.findIdByAlternativeGlobalId");
+        return runFindIdByGlobalId(query, globalId, dtype);
+    }
+
+    private DvObject runFindByGlobalId(Query query, GlobalId gid, DvObject.DType dtype) {
+        DvObject foundDvObject = null;
+        try {
+            query.setParameter("identifier", gid.getIdentifier());
+            query.setParameter("protocol", gid.getProtocol());
+            query.setParameter("authority", gid.getAuthority());
+            query.setParameter("dtype", dtype.getDType());
+            foundDvObject = (DvObject) query.getSingleResult();
+        } catch (NoResultException e) {
+            // (set to .info, this can fill the log file with thousands of
+            // these messages during a large harvest run)
+            logger.fine("no dvObject found: " + gid.asString());
+            // DO nothing, just return null.
+            return null;
+        } catch (Exception ex) {
+            logger.info("Exception caught in findByGlobalId: " + ex.getLocalizedMessage());
+            return null;
+        }
+        return foundDvObject;
+    }
+
+    private Long runFindIdByGlobalId(Query query, GlobalId gid, DvObject.DType dtype) {
+        Long foundDvObject = null;
+        try {
+            query.setParameter("identifier", gid.getIdentifier());
+            query.setParameter("protocol", gid.getProtocol());
+            query.setParameter("authority", gid.getAuthority());
+            query.setParameter("dtype", dtype.getDType());
+            foundDvObject = (Long) query.getSingleResult();
+        } catch (NoResultException e) {
+            // (set to .info, this can fill the log file with thousands of
+            // these messages during a large harvest run)
+            logger.fine("no dvObject found: " + gid.asString());
+            // DO nothing, just return null.
+            return null;
+        } catch (Exception ex) {
+            logger.info("Exception caught in findByGlobalId: " + ex.getLocalizedMessage());
+            return null;
+        }
+        return foundDvObject;
+    }
+    
+    public DvObject findByGlobalId(GlobalId globalId) {
+        try {
+            return (DvObject) em.createNamedQuery("DvObject.findByProtocolIdentifierAuthority")
+                    .setParameter("identifier", globalId.getIdentifier())
+                    .setParameter("authority", globalId.getAuthority()).setParameter("protocol", globalId.getProtocol())
+                    .getSingleResult();
+        } catch (NoResultException nre) {
+            return null;
+        }
+    }
+    
+    public boolean isGlobalIdLocallyUnique(GlobalId globalId) {
+        return em.createNamedQuery("DvObject.findByProtocolIdentifierAuthority")
+            .setParameter("identifier", globalId.getIdentifier())
+            .setParameter("authority", globalId.getAuthority())
+            .setParameter("protocol", globalId.getProtocol())
+            .getResultList().isEmpty();
+    }
+
+    public boolean isGlobalIdLocallyUniqueAlternativeIds(GlobalId globalId) {
+        return em.createNamedQuery("AlternativePersistentIdentifier.findByProtocolIdentifierAuthority")
+                .setParameter("identifier", globalId.getIdentifier())
+                .setParameter("authority", globalId.getAuthority())
+                .setParameter("protocol", globalId.getProtocol())
+                .getResultList().isEmpty();
+    }
+
 
     public DvObject updateContentIndexTime(DvObject dvObject) {
         /**
@@ -139,6 +222,11 @@ public class DvObjectServiceBean implements java.io.Serializable {
      * @todo DRY! Perhaps we should merge this with the older
      * updateContentIndexTime method.
      */
+    @TransactionAttribute(REQUIRES_NEW)
+    public DvObject updatePermissionIndexTimeInNewTransaction(DvObject dvObject) {
+        return updatePermissionIndexTime(dvObject);
+    }
+    
     public DvObject updatePermissionIndexTime(DvObject dvObject) {
         /**
          * @todo to avoid a possible OptimisticLockException, should we merge
@@ -257,7 +345,7 @@ public class DvObjectServiceBean implements java.io.Serializable {
             return null;
         }
         
-        String datasetIdStr = Strings.join(objectIds, ", ");
+        String datasetIdStr = StringUtils.join(objectIds, ", ");
         
         String qstr = "WITH RECURSIVE path_elements AS ((" +
             " SELECT id, owner_id FROM dvobject WHERE id in (" + datasetIdStr + "))" +
@@ -284,9 +372,9 @@ public class DvObjectServiceBean implements java.io.Serializable {
             Long ownerId;
             if (result[0] != null) {
                 try {
-                    objectId = ((Integer) result[0]).longValue();
+                    objectId = ((Number) result[0]).longValue();
                 } catch (Exception ex) {
-                    logger.warning("OBJECT PATH: could not cast result[0] (dvobject id) to Integer!");
+                    logger.warning("OBJECT PATH: could not cast result[0] (dvobject id) to Number!");
                     objectId = null;
                 }
                 if (objectId == null) {
@@ -317,4 +405,31 @@ public class DvObjectServiceBean implements java.io.Serializable {
         }
         return ret;        
     }
+    
+    public String generateNewIdentifierByStoredProcedure() {
+        try {
+            Query query = em.createNativeQuery("SELECT generateIdentifierFromStoredProcedure()");
+            return (String) query.getSingleResult();
+        } catch (DatabaseException e) {
+            // It's possible that the function "generateIdentifierFromStoredProcedure" is not defined in the database
+            logger.severe("Error generating identifier using stored procedure: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /** @deprecated Backward-compatibility method to get the effective pid generator for a DvObjectContainer.
+     * If the dvObjectContainer method fails, this method will check for the old global default settings.
+     * If/when those are no longer supported, this method can be removed and replaced with calls directly 
+     * to dvObjectContainer.getEffectivePidGenerator();
+     * 
+     */
+    @Deprecated(forRemoval = true, since = "2024-02-09")
+    public PidProvider getEffectivePidGenerator(DvObjectContainer dvObjectContainer) {
+        PidProvider pidGenerator = dvObjectContainer.getEffectivePidGenerator();
+        if (pidGenerator == null) {
+            pidGenerator = pidProviderFactoryBean.getDefaultPidGenerator();
+        }
+        return pidGenerator;
+    }
+    
 }

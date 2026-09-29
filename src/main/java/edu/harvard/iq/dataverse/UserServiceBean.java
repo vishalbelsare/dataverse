@@ -1,4 +1,5 @@
 package edu.harvard.iq.dataverse;
+import edu.harvard.iq.dataverse.UserNotification.Type;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.search.IndexServiceBean;
 import edu.harvard.iq.dataverse.userdata.UserUtil;
@@ -11,16 +12,15 @@ import java.sql.Timestamp;
 import java.util.Date;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.ejb.TransactionAttribute;
-import javax.ejb.TransactionAttributeType;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.ejb.TransactionAttribute;
+import jakarta.ejb.TransactionAttributeType;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 import org.apache.commons.lang3.StringUtils;
-import org.ocpsoft.common.util.Strings;
 
 @Stateless
 @Named
@@ -125,7 +125,7 @@ public class UserServiceBean {
     private AuthenticatedUser createAuthenticatedUserForView (Object[] dbRowValues, String roles, int rowNum){
         AuthenticatedUser user = new AuthenticatedUser();
 
-        user.setId(new Long((int)dbRowValues[0]));
+        user.setId(((Number)dbRowValues[0]).longValue());
         user.setUserIdentifier((String)dbRowValues[1]);
         user.setLastName(UserUtil.getStringOrNull(dbRowValues[2]));
         user.setFirstName(UserUtil.getStringOrNull(dbRowValues[3]));
@@ -144,6 +144,11 @@ public class UserServiceBean {
         user.setDeactivated((Boolean)(dbRowValues[13]));
         user.setDeactivatedTime(UserUtil.getTimestampOrNull(dbRowValues[14]));
 
+        user.setMutedEmails(Type.tokenizeToSet((String) dbRowValues[15]));
+        user.setMutedNotifications(Type.tokenizeToSet((String) dbRowValues[15]));
+
+        user.setRateLimitTier((int)dbRowValues[17]);
+
         user.setRoles(roles);
         return user;
     }
@@ -152,7 +157,7 @@ public class UserServiceBean {
      * Attempt to retrieve all the user roles in 1 query
      * Consider putting limits on this -- e.g. no more than 1,000 user identifiers or something similar
      * 
-     * @param userIdentifierList
+     * @param userObjectList
      * @return
      */
     private HashMap<String, List<String>> retrieveRolesForUsers(List<Object[]> userObjectList){
@@ -165,7 +170,7 @@ public class UserServiceBean {
                                        ;
 
         List<Integer> databaseIds = userObjectList.stream()
-                                        .map(userInfo -> (Integer)userInfo[0])
+                                        .map(userInfo -> ((Number)userInfo[0]).intValue())
                                         .collect(Collectors.toList());
 
         if ((userIdentifierList==null)||(userIdentifierList.isEmpty())){
@@ -186,7 +191,7 @@ public class UserServiceBean {
         // Add '@' to each identifier and delimit the list by ","
         // -------------------------------------------------
         String identifierListString = userIdentifierList.stream()
-                                     .filter(x -> !Strings.isNullOrEmpty(x))
+                                     .filter(x -> x != null && !x.isEmpty())
                                      .map(x -> "'@" + x + "'")
                                      .collect(Collectors.joining(", "));
 
@@ -415,7 +420,8 @@ public class UserServiceBean {
         qstr += " u.position,";
         qstr += " u.createdtime, u.lastlogintime, u.lastapiusetime, ";
         qstr += " prov.id, prov.factoryalias, ";
-        qstr += " u.deactivated, u.deactivatedtime ";
+        qstr += " u.deactivated, u.deactivatedtime, ";
+        qstr += " u.mutedEmails, u.mutedNotifications, u.rateLimitTier ";
         qstr += " FROM authenticateduser u,";
         qstr += " authenticateduserlookup prov_lookup,";
         qstr += " authenticationproviderrow prov";

@@ -3,6 +3,7 @@ package edu.harvard.iq.dataverse.api;
 import edu.harvard.iq.dataverse.Dataverse;
 import edu.harvard.iq.dataverse.UserNotification;
 import edu.harvard.iq.dataverse.actionlogging.ActionLogRecord;
+import edu.harvard.iq.dataverse.api.auth.ApiKeyAuthMechanism;
 import edu.harvard.iq.dataverse.authorization.UserRecordIdentifier;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUser;
@@ -12,25 +13,27 @@ import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import java.sql.Timestamp;
-import java.util.Calendar;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.ejb.EJBException;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.ejb.EJB;
+import jakarta.ejb.EJBException;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import java.util.Date;
 import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
-import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
-import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
-import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 /**
  * REST API bean for managing {@link BuiltinUser}s.
@@ -38,18 +41,23 @@ import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
  * @author michael
  */
 @Path("builtin-users")
+@Tag(name = "Users", description = "User account and authenticated user operations.")
 public class BuiltinUsers extends AbstractApiBean {
 
     private static final Logger logger = Logger.getLogger(BuiltinUsers.class.getName());
-
-    private static final String API_KEY_IN_SETTINGS = "BuiltinUsers.KEY";
 
     @EJB
     protected BuiltinUserServiceBean builtinUserSvc;
 
     @GET
     @Path("{username}/api-token")
-    public Response getApiToken( @PathParam("username") String username, @QueryParam("password") String password ) {
+    @Operation(summary = "Returns a builtin user's API token",
+            description = "Returns the API token for a builtin user when token lookup is enabled and the supplied password is valid.")
+    public Response getApiToken(
+            @Parameter(description = "Builtin username whose API token is requested.", required = true)
+            @PathParam("username") String username,
+            @Parameter(description = "Builtin account password used to verify token lookup.")
+            @QueryParam("password") String password) {
         boolean disabled = true;
         boolean lookupAllowed = settingsSvc.isTrueForKey(SettingsServiceBean.Key.AllowApiTokenLookupViaApi, false);
         if (lookupAllowed) {
@@ -84,7 +92,17 @@ public class BuiltinUsers extends AbstractApiBean {
     //and use the values to create BuiltinUser/AuthenticatedUser.
     //--MAD 4.9.3
     @POST
-    public Response save(BuiltinUser user, @QueryParam("password") String password, @QueryParam("key") String key, @QueryParam("sendEmailNotification") Boolean sendEmailNotification) {   
+    @Operation(summary = "Creates a builtin user",
+            description = "Creates a builtin user, matching authenticated user, and API token when the builtin-users management key is valid.")
+    public Response save(
+            @RequestBody(description = "Builtin user account data used to create the builtin and authenticated user records.")
+            BuiltinUser user,
+            @Parameter(description = "Password assigned to the builtin user.")
+            @QueryParam("password") String password,
+            @Parameter(description = "Builtin-users management key required to create the account.")
+            @QueryParam("key") String key,
+            @Parameter(description = "Send a create-account email notification to the new user.")
+            @QueryParam("sendEmailNotification") Boolean sendEmailNotification) {
         if( sendEmailNotification == null )
             sendEmailNotification = true;
         
@@ -104,7 +122,15 @@ public class BuiltinUsers extends AbstractApiBean {
      */
     @POST
     @Path("{password}/{key}")
-    public Response create(BuiltinUser user, @PathParam("password") String password, @PathParam("key") String key) {
+    @Operation(summary = "Creates a builtin user with path credentials",
+            description = "Creates a builtin user, matching authenticated user, and API token using password and management key path values.")
+    public Response create(
+            @RequestBody(description = "Builtin user account data used to create the builtin and authenticated user records.")
+            BuiltinUser user,
+            @Parameter(description = "Password assigned to the builtin user.", required = true)
+            @PathParam("password") String password,
+            @Parameter(description = "Builtin-users management key required to create the account.", required = true)
+            @PathParam("key") String key) {
         return internalSave(user, password, key);
     }
     
@@ -121,7 +147,17 @@ public class BuiltinUsers extends AbstractApiBean {
      */
     @POST
     @Path("{password}/{key}/{sendEmailNotification}")
-    public Response create(BuiltinUser user, @PathParam("password") String password, @PathParam("key") String key, @PathParam("sendEmailNotification") Boolean sendEmailNotification) {
+    @Operation(summary = "Creates a builtin user with notification control",
+            description = "Creates a builtin user, matching authenticated user, and API token while controlling whether a create-account notification is sent.")
+    public Response createWithNotification(
+            @RequestBody(description = "Builtin user account data used to create the builtin and authenticated user records.")
+            BuiltinUser user,
+            @Parameter(description = "Password assigned to the builtin user.", required = true)
+            @PathParam("password") String password,
+            @Parameter(description = "Builtin-users management key required to create the account.", required = true)
+            @PathParam("key") String key,
+            @Parameter(description = "Send a create-account email notification to the new user.", required = true)
+            @PathParam("sendEmailNotification") Boolean sendEmailNotification) {
         return internalSave(user, password, key, sendEmailNotification);
     }
     
@@ -131,7 +167,7 @@ public class BuiltinUsers extends AbstractApiBean {
     }
     
     private Response internalSave(BuiltinUser user, String password, String key, Boolean sendEmailNotification) {
-        String expectedKey = settingsSvc.get(API_KEY_IN_SETTINGS);
+        String expectedKey = settingsSvc.getValueForKey(SettingsServiceBean.Key.BuiltinUsersKey);
         
         if (expectedKey == null) {
             return error(Status.SERVICE_UNAVAILABLE, "Dataverse config issue: No API key defined for built in user management");
@@ -183,7 +219,7 @@ public class BuiltinUsers extends AbstractApiBean {
             ApiToken token = authSvc.generateApiTokenForUser(au);
             authSvc.save(token);
 
-            JsonObjectBuilder resp = Json.createObjectBuilder();
+            JsonObjectBuilder resp = JsonUtil.createObjectBuilder();
             resp.add("user", json(user));
             resp.add("authenticatedUser", json(au));
             resp.add("apiToken", token.getTokenString());
@@ -212,17 +248,14 @@ public class BuiltinUsers extends AbstractApiBean {
         }
     }
 
+    /***
+     * This method was moved here from AbstractApiBean during the filter-based auth
+     * refactoring, in order to preserve the existing BuiltinUsers endpoints behavior.
+     *
+     * @param apiKey from request
+     * @return error Response
+     */
+    private Response badApiKey(String apiKey) {
+        return error(Status.UNAUTHORIZED, (apiKey != null) ? "Bad api key " : "Please provide a key query parameter (?key=XXX) or via the HTTP header " + ApiKeyAuthMechanism.DATAVERSE_API_KEY_REQUEST_HEADER_NAME);
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

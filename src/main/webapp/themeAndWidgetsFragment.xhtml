@@ -6,7 +6,7 @@
     xmlns:o="http://omnifaces.org/ui"
     xmlns:of="http://omnifaces.org/functions">
     <!-- Theme and Widgets Edit Tabs -->
-        <p:tabView id="themeWidgetsTabView" rendered="#{themeWidgetFragment.editDv!=null}" widgetVar="content">
+        <p:tabView id="themeWidgetsTabView" rendered="#{themeWidgetFragment.editDv!=null}" widgetVar="content" dynamic="true">
             <p:tab id="themeTab" title="#{bundle['dataverse.theme.title']}" rendered="#{not settingsWrapper.rootDataverseThemeDisabled or themeWidgetFragment.editDv.owner != null}">
                 <p:fragment>
                     <p:autoUpdate/>
@@ -25,7 +25,7 @@
                                         <h:selectBooleanCheckbox id="themeRoot" tabindex="7" styleClass="metadata-blocks-default" 
                                                                  rendered="#{themeWidgetFragment.editDv.owner != null}"
                                                                  value="#{themeWidgetFragment.inheritCustomization}" >
-                                            <p:ajax update="@widgetVar(content)" oncomplete="javascript:bind_bsui_components();" listener="#{themeWidgetFragment.checkboxListener()}"/>
+                                            <p:ajax update="@widgetVar(content)" listener="#{themeWidgetFragment.checkboxListener()}"/>
                                         </h:selectBooleanCheckbox>
                                         <h:outputFormat value="#{bundle['dataverse.theme.inheritCustomization.checkbox']}">
                                             <f:param value="#{themeWidgetFragment.editDv.themeRootDataverseName}"/>
@@ -48,14 +48,14 @@
                                             <img jsf:rendered="#{themeWidgetFragment.uploadExists()}" class="logoPreview" src="/logos/temp/#{themeWidgetFragment.tempDirName}/#{themeWidgetFragment.editDv.dataverseTheme.logo}" alt="#{of:format1(bundle['alt.logo'], themeWidgetFragment.editDv.name)}"/>
                                             <img jsf:rendered="#{not themeWidgetFragment.uploadExists()}" class="logoPreview" src="/logos/#{themeWidgetFragment.editDv.id}/#{themeWidgetFragment.editDv.dataverseTheme.logo}" alt="#{of:format1(bundle['alt.logo'], themeWidgetFragment.editDv.name)}"/>
                                         </p>
-                                        <p:commandButton update=":themeWidgetsForm:themeWidgetsTabView" value="#{bundle.remove}" action="#{themeWidgetFragment.removeLogo()}" oncomplete="bind_bsui_components();"/>
+                                        <p:commandButton update=":themeWidgetsForm:themeWidgetsTabView" value="#{bundle.remove}" action="#{themeWidgetFragment.removeLogo()}"/>
                                     </p:column>                              
-                                    <p:fileUpload invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" id="changelogo" allowTypes="/(\.|\/)(jpg|jpeg|tff|png|gif)$/" update=":themeWidgetsForm:themeWidgetsTabView" oncomplete="bind_bsui_components();" dragDropSupport="true" auto="true" multiple="false"
+                                    <p:fileUpload invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" id="changelogo" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
                                                   listener="#{themeWidgetFragment.handleImageFileUpload}" label="#{bundle['dataverse.theme.logo.image.upload']}"/>
                                 </p:panelGrid>
                                 <p:panelGrid rendered="#{empty themeWidgetFragment.editDv.dataverseTheme.logo}" columns="2" styleClass="noBorders">
-                                    <p:fileUpload id="uploadlogo" invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" sizeLimit="#{systemConfig.uploadLogoSizeLimit}" allowTypes="/(\.|\/)(jpg|jpeg|tff|png|gif)$/" update=":themeWidgetsForm:themeWidgetsTabView" oncomplete="bind_bsui_components();" dragDropSupport="true" auto="true" multiple="false"
-                                                  listener="#{themeWidgetFragment.handleImageFileUpload}" label="#{bundle['dataverse.theme.logo.image.uploadImgFile']}"/>
+                                    <p:fileUpload id="uploadlogo" invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" sizeLimit="#{systemConfig.uploadLogoSizeLimit}" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
+                                                  listener="#{themeWidgetFragment.handleImageFileUpload}" label="#{bundle['dataverse.theme.logo.image.uploadImgFile']}" invalidSizeMessage="#{bundle['file.edit.error.file_exceeds_limit']}"/>
                                 </p:panelGrid>
                                 <ui:fragment rendered="#{not empty themeWidgetFragment.editDv.dataverseTheme.logo}">
                                     <div class="form-col-container col-sm-4">
@@ -68,7 +68,7 @@
                                             <p:selectOneRadio id="logoFormat" value="#{themeWidgetFragment.editDv.dataverseTheme.logoFormat}">
                                                 <f:selectItem itemLabel="#{bundle['dataverse.theme.logo.format.selectTab.square']}" itemValue="SQUARE"/>
                                                 <f:selectItem itemLabel="#{bundle['dataverse.theme.logo.format.selectTab.rectangle']}" itemValue="RECTANGLE"/>
-                                                <p:ajax update="@widgetVar(content)" oncomplete="bind_bsui_components();" />
+                                                <p:ajax update="@widgetVar(content)"/>
                                             </p:selectOneRadio>
                                             <p:message for="logoFormat" display="text"/>
                                         </div>
@@ -102,6 +102,31 @@
                                         </div>
                                     </ui:fragment>
                                 </ui:fragment>
+                            </div>
+                        </div>
+                        <div class="form-group" jsf:rendered="#{themeWidgetFragment.editDv.themeRoot}">
+                            <label class="col-sm-3 control-label" for="thumbnailFormat">
+                                #{bundle['dataverse.theme.logo.imageThumbnail']}
+                                <span class="glyphicon glyphicon-question-sign tooltip-icon"
+                                      data-toggle="tooltip" data-placement="auto right" data-original-title="#{bundle['dataverse.theme.logo.image.thumbnail']}"></span>
+                            </label>
+                            <div class="col-sm-9">
+                                <p class="help-block">#{bundle['dataverse.theme.logo.tip']}</p>
+                                <p:panelGrid rendered="#{not empty themeWidgetFragment.editDv.dataverseTheme.logoThumbnail}" columns="2" styleClass="noBorders" columnClasses="text-center,uploadNewLogo">
+                                    <p:column>
+                                        <p>
+                                            <img jsf:rendered="#{themeWidgetFragment.uploadExistsThumbnail()}" class="logoPreview" src="/logos/temp/#{themeWidgetFragment.tempDirName}/#{themeWidgetFragment.editDv.dataverseTheme.logoThumbnail}" alt="#{of:format1(bundle['alt.logo'], themeWidgetFragment.editDv.name)}"/>
+                                            <img jsf:rendered="#{not themeWidgetFragment.uploadExistsThumbnail()}" class="logoPreview" src="/logos/#{themeWidgetFragment.editDv.id}/#{themeWidgetFragment.editDv.dataverseTheme.logoThumbnail}" alt="#{of:format1(bundle['alt.logo'], themeWidgetFragment.editDv.name)}"/>
+                                        </p>
+                                        <p:commandButton update=":themeWidgetsForm:themeWidgetsTabView" value="#{bundle.remove}" action="#{themeWidgetFragment.removeLogoThumbnail()}"/>
+                                    </p:column>
+                                    <p:fileUpload invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" id="changelogothumbnail" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
+                                                  listener="#{themeWidgetFragment.handleImageThumbnailFileUpload}" label="#{bundle['dataverse.theme.logo.image.upload']}"/>
+                                </p:panelGrid>
+                                <p:panelGrid rendered="#{empty themeWidgetFragment.editDv.dataverseTheme.logoThumbnail}" columns="2" styleClass="noBorders">
+                                    <p:fileUpload id="uploadlogoThumbnail" invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" sizeLimit="#{systemConfig.uploadLogoSizeLimit}" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
+                                                  listener="#{themeWidgetFragment.handleImageThumbnailFileUpload}" label="#{bundle['dataverse.theme.logo.image.uploadImgFile']}" invalidSizeMessage="#{bundle['file.edit.error.file_exceeds_limit']}"/>
+                                </p:panelGrid>
                             </div>
                         </div>
                     </div>
@@ -181,7 +206,7 @@
                             </div>
                             <!-- Dataverse footer logo -->
                             <div class="form-group" jsf:rendered="#{themeWidgetFragment.editDv.themeRoot}">
-                                <label class="col-sm-3 control-label" for="logoFormat">
+                                <label class="col-sm-3 control-label">
                                     #{bundle['dataverse.theme.logo.imageFooter']}
                                     <span class="glyphicon glyphicon-question-sign tooltip-icon"
                                           data-toggle="tooltip" data-placement="auto right" data-original-title="#{bundle['dataverse.theme.logo.image.footer']}"></span>
@@ -194,14 +219,14 @@
                                                 <img jsf:rendered="#{themeWidgetFragment.uploadExistsFooter()}" class="logoPreview" src="/logos/temp/#{themeWidgetFragment.tempDirName}/#{themeWidgetFragment.editDv.dataverseTheme.logoFooter}" alt="#{themeWidgetFragment.editDv.name}"/>
                                                 <img jsf:rendered="#{not themeWidgetFragment.uploadExistsFooter()}" class="logoPreview" src="/logos/#{themeWidgetFragment.editDv.id}/#{themeWidgetFragment.editDv.dataverseTheme.logoFooter}" alt="#{themeWidgetFragment.editDv.name}"/>
                                             </p>
-                                            <p:commandButton update=":themeWidgetsForm:themeWidgetsTabView" value="#{bundle.remove}" action="#{themeWidgetFragment.removeLogoFooter()}" oncomplete="bind_bsui_components();"/>
+                                            <p:commandButton update=":themeWidgetsForm:themeWidgetsTabView" value="#{bundle.remove}" action="#{themeWidgetFragment.removeLogoFooter()}"/>
                                         </p:column>
-                                        <p:fileUpload invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" id="changelogoFooter" allowTypes="/(\.|\/)(jpg|jpeg|tff|png|gif)$/" update=":themeWidgetsForm:themeWidgetsTabView" oncomplete="bind_bsui_components();" dragDropSupport="true" auto="true" multiple="false"
+                                        <p:fileUpload invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" id="changelogoFooter" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
                                                       listener="#{themeWidgetFragment.handleImageFooterFileUpload}" label="#{bundle['dataverse.theme.logo.image.upload']}"/>
                                     </p:panelGrid>
                                     <p:panelGrid rendered="#{empty themeWidgetFragment.editDv.dataverseTheme.logoFooter}" columns="2" styleClass="noBorders">
-                                        <p:fileUpload id="uploadlogoFooter" invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" sizeLimit="#{systemConfig.uploadLogoSizeLimit}" allowTypes="/(\.|\/)(jpg|jpeg|tff|png|gif)$/" update=":themeWidgetsForm:themeWidgetsTabView" oncomplete="bind_bsui_components();" dragDropSupport="true" auto="true" multiple="false"
-                                                      listener="#{themeWidgetFragment.handleImageFooterFileUpload}" label="#{bundle['dataverse.theme.logo.image.uploadImgFile']}"/>
+                                        <p:fileUpload id="uploadlogoFooter" invalidFileMessage="#{bundle['dataverse.theme.logo.image.invalidMsg']}" sizeLimit="#{systemConfig.uploadLogoSizeLimit}" allowTypes="/(\.|\/)(jpg|jpeg|png)$/" update=":themeWidgetsForm:themeWidgetsTabView" dragDropSupport="true" auto="true" multiple="false"
+                                                      listener="#{themeWidgetFragment.handleImageFooterFileUpload}" label="#{bundle['dataverse.theme.logo.image.uploadImgFile']}" invalidSizeMessage="#{bundle['file.edit.error.file_exceeds_limit']}"/>
                                     </p:panelGrid>
                                     <ui:fragment rendered="#{not empty themeWidgetFragment.editDv.dataverseTheme.logoFooter}">
                                         <div class="form-col-container col-sm-3">
@@ -237,7 +262,7 @@
                     </ui:fragment>
                 </p:fragment>
                 <div class="button-block">
-                    <p:commandButton class="btn btn-default" value="#{bundle.saveChanges}" update=":#{p:resolveClientId('messagePanel', view)}, :themeWidgetsForm" action="#{themeWidgetFragment.save()}" oncomplete="bind_bsui_components();"/>
+                    <p:commandButton class="btn btn-default" value="#{bundle.saveChanges}" update=":#{p:resolveClientId('messagePanel', view)}, :themeWidgetsForm" action="#{themeWidgetFragment.save()}"/>
                     <p:commandButton id="themeCancel" class="btn btn-link" value="#{bundle.cancel}" action="#{themeWidgetFragment.cancel()}" immediate="true"/>
                 </div>
             </p:tab>
@@ -289,7 +314,7 @@
                         <p class="help-block">#{bundle['dataverse.widgets.searchBox.tip']}</p>
                     </div>
                     <div>
-                        <textarea rows="3" cols="54" class="form-control">&lt;script src=&quot;#{systemConfig.dataverseSiteUrl}/resources/js/widgets.js?alias=#{themeWidgetFragment.editDv.alias}&amp;amp;dvUrl=#{systemConfig.dataverseSiteUrl}&amp;amp;widget=search&amp;amp;text=Search&#43;my&#43;dataverse&quot;&gt;&lt;/script&gt;</textarea>
+                        <textarea rows="3" cols="54" class="form-control">&lt;script id=&quot;dataverse-widget-js&quot; src=&quot;#{systemConfig.dataverseSiteUrl}/resources/js/widgets.js?alias=#{themeWidgetFragment.editDv.alias}&amp;amp;dvUrl=#{systemConfig.dataverseSiteUrl}&amp;amp;widget=search&amp;amp;text=Search&#43;my&#43;dataverse&quot;&gt;&lt;/script&gt;</textarea>
                     </div>
                     <div>
                         <h5>
@@ -298,7 +323,7 @@
                         <p class="help-block">#{bundle['dataverse.widgets.dataverseListing.tip']}</p>
                     </div>
                     <div>
-                        <textarea rows="3" cols="54" class="form-control">&lt;script src=&quot;#{systemConfig.dataverseSiteUrl}/resources/js/widgets.js?alias=#{themeWidgetFragment.editDv.alias}&amp;amp;dvUrl=#{systemConfig.dataverseSiteUrl}&amp;amp;widgetScope=#{themeWidgetFragment.editDv.alias}&amp;amp;widget=iframe&amp;amp;heightPx=500&quot;&gt;&lt;/script&gt;</textarea>
+                        <textarea rows="3" cols="54" class="form-control">&lt;script id=&quot;dataverse-widget-js&quot; src=&quot;#{systemConfig.dataverseSiteUrl}/resources/js/widgets.js?alias=#{themeWidgetFragment.editDv.alias}&amp;amp;dvUrl=#{systemConfig.dataverseSiteUrl}&amp;amp;widgetScope=#{themeWidgetFragment.editDv.alias}&amp;amp;widget=iframe&amp;amp;heightPx=500&quot;&gt;&lt;/script&gt;</textarea>
                     </div>
                     <div class="button-block">
                         <p:commandButton id="widgetsDone" class="btn btn-default" value="#{bundle.done}" action="#{themeWidgetFragment.cancel()}" immediate="true"/>

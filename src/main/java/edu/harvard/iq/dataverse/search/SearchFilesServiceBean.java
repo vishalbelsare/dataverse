@@ -7,11 +7,11 @@ import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.faces.context.FacesContext;
-import javax.inject.Named;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.faces.context.FacesContext;
+import jakarta.inject.Named;
+import jakarta.servlet.http.HttpServletRequest;
 
 @Named
 @Stateless
@@ -20,7 +20,7 @@ public class SearchFilesServiceBean {
     private static final Logger logger = Logger.getLogger(SearchFilesServiceBean.class.getCanonicalName());
 
     @EJB
-    SearchServiceBean searchService;
+    SearchServiceFactory searchService;
     
     public FileView getFileView(DatasetVersion datasetVersion, User user, String userSuppliedQuery) {
         Dataverse dataverse = null;
@@ -46,7 +46,7 @@ public class SearchFilesServiceBean {
         dataverses.add(dataverse);
         try {
             HttpServletRequest httpServletRequest = (HttpServletRequest) FacesContext.getCurrentInstance().getExternalContext().getRequest();
-            solrQueryResponse = searchService.search(new DataverseRequest(user, httpServletRequest), dataverses, finalQuery, filterQueries, sortField, sortOrder, paginationStart, onlyDataRelatedToMe, numResultsPerPage);
+            solrQueryResponse = searchService.getDefaultSearchService().search(new DataverseRequest(user, httpServletRequest), dataverses, finalQuery, filterQueries, sortField, sortOrder, paginationStart, onlyDataRelatedToMe, numResultsPerPage);
         } catch (SearchException ex) {
             logger.info(SearchException.class + " searching for files: " + ex);
             return null;

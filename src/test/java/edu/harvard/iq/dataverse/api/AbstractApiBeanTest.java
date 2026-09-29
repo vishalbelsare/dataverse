@@ -1,38 +1,43 @@
 package edu.harvard.iq.dataverse.api;
 
-import edu.harvard.iq.dataverse.util.MockResponse;
-import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
-import javax.json.JsonWriter;
-import javax.json.JsonWriterFactory;
-import javax.json.stream.JsonGenerator;
-import javax.ws.rs.core.Response;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import org.junit.Before;
-import org.junit.Test;
 
-public class AbstractApiBeanTest {
+import edu.harvard.iq.dataverse.settings.FeatureFlags;
+import edu.harvard.iq.dataverse.settings.JvmSettings;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import edu.harvard.iq.dataverse.util.testing.FeatureFlag;
+import edu.harvard.iq.dataverse.util.testing.JvmSetting;
+import edu.harvard.iq.dataverse.util.testing.LocalFeatureFlags;
+import edu.harvard.iq.dataverse.util.testing.LocalJvmSettings;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonWriter;
+import jakarta.json.JsonWriterFactory;
+import jakarta.json.stream.JsonGenerator;
+import jakarta.ws.rs.core.Response;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+@LocalFeatureFlags
+@LocalJvmSettings
+class AbstractApiBeanTest {
 
     private static final Logger logger = Logger.getLogger(AbstractApiBeanTest.class.getCanonicalName());
 
     AbstractApiBeanImpl sut;
 
-    @Before
-    public void before() {
+    @BeforeEach
+    void before() {
         sut = new AbstractApiBeanImpl();
     }
 
     @Test
-    public void testParseBooleanOrDie_ok() throws Exception {
+    void testParseBooleanOrDie_ok() throws Exception {
         assertTrue(sut.parseBooleanOrDie("1"));
         assertTrue(sut.parseBooleanOrDie("yes"));
         assertTrue(sut.parseBooleanOrDie("true"));
@@ -40,32 +45,68 @@ public class AbstractApiBeanTest {
         assertFalse(sut.parseBooleanOrDie("0"));
         assertFalse(sut.parseBooleanOrDie("no"));
     }
-
-    @Test(expected = Exception.class)
-    public void testParseBooleanOrDie_invalid() throws Exception {
-        sut.parseBooleanOrDie("I'm not a boolean value!");
+    
+    @Test
+    void testParseBooleanOrDie_invalid() {
+        assertThrows(Exception.class, () -> sut.parseBooleanOrDie("I'm not a boolean value!"));
     }
 
     @Test
-    public void testFailIfNull_ok() throws Exception {
-        sut.failIfNull(sut, "");
+    void testFailIfNull_ok() {
+        assertDoesNotThrow(() -> sut.failIfNull(sut, ""));
     }
 
     @Test
-    public void testMessagesNoJsonObject() {
+    void testMessagesNoJsonObject() {
         String message = "myMessage";
         Response response = sut.ok(message);
-        JsonReader jsonReader = Json.createReader(new StringReader((String) response.getEntity().toString()));
-        JsonObject jsonObject = jsonReader.readObject();
-        Map<String, Boolean> config = new HashMap<>();
+        JsonObject jsonObject = JsonUtil.getJsonObject(response.getEntity().toString());
+        Map<String, Object> config = new HashMap<>();
         config.put(JsonGenerator.PRETTY_PRINTING, true);
-        JsonWriterFactory jwf = Json.createWriterFactory(config);
+        JsonWriterFactory jwf = JsonUtil.createWriterFactory(config);
         StringWriter sw = new StringWriter();
         try (JsonWriter jsonWriter = jwf.createWriter(sw)) {
             jsonWriter.writeObject(jsonObject);
         }
         logger.info(sw.toString());
         assertEquals(message, jsonObject.getJsonObject("data").getString("message"));
+    }
+    
+    @Test
+    @FeatureFlag(flag = FeatureFlags.UNIFY_API_RESPONSE_MESSAGE_STYLE)
+    void testUnifiedMessageStyle() {
+        // given
+        String message = "myMessage";
+        
+        // when
+        Response response = sut.ok(message);
+        
+        // then
+        JsonObject jsonObject = JsonUtil.getJsonObject(response.getEntity().toString());
+        assertEquals(message, jsonObject.getString(ApiConstants.MESSAGE_FIELD));
+    }
+
+    @Test
+    void testMessageAndDataDefaultStyle() {
+        String message = "myMessage";
+        Response response = sut.ok(message, JsonUtil.createObjectBuilder().add("test", "value"));
+
+        JsonObject jsonObject = JsonUtil.getJsonObject(response.getEntity().toString());
+
+        assertEquals(message, jsonObject.getString(ApiConstants.MESSAGE_FIELD));
+        assertEquals("value", jsonObject.getJsonObject(ApiConstants.DATA_FIELD).getString("test"));
+    }
+
+    @Test
+    @JvmSetting(key = JvmSettings.LEGACY_API_RESPONSE_MESSAGE_STYLE, value = "true")
+    void testMessageAndDataLegacyStyle() {
+        String message = "myMessage";
+        Response response = sut.ok(message, JsonUtil.createObjectBuilder().add("test", "value"));
+
+        JsonObject jsonObject = JsonUtil.getJsonObject(response.getEntity().toString());
+
+        assertEquals(message, jsonObject.getJsonObject(ApiConstants.MESSAGE_FIELD).getString(ApiConstants.MESSAGE_FIELD));
+        assertEquals("value", jsonObject.getJsonObject(ApiConstants.DATA_FIELD).getString("test"));
     }
 
     /**

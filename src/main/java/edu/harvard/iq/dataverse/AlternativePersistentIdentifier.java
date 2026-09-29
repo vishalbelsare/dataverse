@@ -3,20 +3,21 @@ package edu.harvard.iq.dataverse;
 
 import java.io.Serializable;
 import java.util.Date;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.Temporal;
-import javax.persistence.TemporalType;
+
+import jakarta.persistence.*;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  *
  * @author skraffmi
  */
+@NamedQueries({
+        @NamedQuery(name = "AlternativePersistentIdentifier.findByProtocolIdentifierAuthority",
+                query = "SELECT o.id FROM AlternativePersistentIdentifier o WHERE o.identifier=:identifier and o.authority=:authority and o.protocol=:protocol")
+}
+)
 @Entity
+@Schema(description = "Alternate persistent identifier assigned to a Dataverse object, including protocol, authority, identifier, and registration state.")
 public class AlternativePersistentIdentifier implements Serializable {
     
     @Id

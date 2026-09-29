@@ -2,13 +2,15 @@ package edu.harvard.iq.dataverse.locality;
 
 import java.io.Serializable;
 import java.util.Objects;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
 
 @Entity
 public class StorageSite implements Serializable {
@@ -125,7 +127,7 @@ public class StorageSite implements Serializable {
     }
 
     public JsonObjectBuilder toJsonObjectBuilder() {
-        return Json.createObjectBuilder()
+        return JsonUtil.createObjectBuilder()
                 .add(ID, id)
                 .add(HOSTNAME, hostname)
                 .add(NAME, name)

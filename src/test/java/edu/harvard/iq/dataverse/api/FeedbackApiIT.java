@@ -1,26 +1,27 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.OK;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import org.hamcrest.CoreMatchers;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class FeedbackApiIT {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
     }
 
     @Test
     public void testSupportRequest() {
-        JsonObjectBuilder job = Json.createObjectBuilder();
+        JsonObjectBuilder job = JsonUtil.createObjectBuilder();
         job.add("fromEmail", "from@mailinator.com");
         job.add("subject", "Help!");
         job.add("body", "I need help.");
@@ -34,7 +35,7 @@ public class FeedbackApiIT {
 
     @Test
     public void testSubmitFeedbackOnRootDataverse() {
-        JsonObjectBuilder job = Json.createObjectBuilder();
+        JsonObjectBuilder job = JsonUtil.createObjectBuilder();
         long rootDataverseId = 1;
         job.add("id", rootDataverseId);
         job.add("fromEmail", "from@mailinator.com");
@@ -75,7 +76,7 @@ public class FeedbackApiIT {
         long datasetId = JsonPath.from(createDataset.body().asString()).getLong("data.id");
         String pid = JsonPath.from(createDataset.body().asString()).getString("data.persistentId");
 
-        JsonObjectBuilder job = Json.createObjectBuilder();
+        JsonObjectBuilder job = JsonUtil.createObjectBuilder();
         job.add("id", datasetId);
         job.add("fromEmail", "from@mailinator.com");
         job.add("toEmail", "to@mailinator.com");

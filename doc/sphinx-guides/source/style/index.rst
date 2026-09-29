@@ -11,6 +11,8 @@ This style guide is meant to help developers implement clear and appropriate UI 
 **Contents:**
 
 .. toctree::
+   :maxdepth: 2
 
    foundations
    patterns
+   text

@@ -1,7 +1,6 @@
 package edu.harvard.iq.dataverse.dataset;
 
 import edu.harvard.iq.dataverse.DataFile;
-import edu.harvard.iq.dataverse.DataFileCategory;
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetField;
 import edu.harvard.iq.dataverse.DatasetFieldType;
@@ -9,12 +8,14 @@ import edu.harvard.iq.dataverse.DatasetVersion;
 import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.DatasetFieldType.FieldType;
 import edu.harvard.iq.dataverse.dataaccess.ImageThumbConverter;
+import edu.harvard.iq.dataverse.license.License;
 import edu.harvard.iq.dataverse.mocks.MocksFactory;
-import java.io.InputStream;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DatasetUtilTest {
 
@@ -65,13 +66,14 @@ public class DatasetUtilTest {
         DatasetThumbnail result = DatasetUtil.getThumbnail(dataset, ImageThumbConverter.DEFAULT_CARDIMAGE_SIZE);
         assertNull(result);
     }
+
     /**
      * Test of deleteDatasetLogo method, of class DatasetUtil.
      */
     @Test
     public void testDeleteDatasetLogo() {
-        assertEquals(false, DatasetUtil.deleteDatasetLogo(null));
-        assertEquals(false, DatasetUtil.deleteDatasetLogo(new Dataset()));
+        assertFalse(DatasetUtil.deleteDatasetLogo(null));
+        assertFalse(DatasetUtil.deleteDatasetLogo(new Dataset()));
     }
 
     /**
@@ -106,7 +108,7 @@ public class DatasetUtilTest {
     @Test
     public void testIsDatasetLogoPresent() {
         Dataset dataset = MocksFactory.makeDataset();
-        assertEquals(false, DatasetUtil.isDatasetLogoPresent(dataset, ImageThumbConverter.DEFAULT_CARDIMAGE_SIZE));
+        assertFalse(DatasetUtil.isDatasetLogoPresent(dataset, ImageThumbConverter.DEFAULT_CARDIMAGE_SIZE));
     }
 
     @Test
@@ -159,5 +161,52 @@ public class DatasetUtilTest {
         version.setDatasetFields(fields);
 
         assertEquals(0, DatasetUtil.getDatasetSummaryFields(version, "object").size());
+    }
+
+    @Test
+    public void testGetDatasetSummaryFieldNames_emptyCustomFields() {
+        String[] actual = DatasetUtil.getDatasetSummaryFieldNames(null);
+        String[] expected = DatasetUtil.datasetDefaultSummaryFieldNames.split(",");
+
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testGetDatasetSummaryFieldNames_notEmptyCustomFields() {
+        String testCustomFields = "test1,test2";
+        String[] actual = DatasetUtil.getDatasetSummaryFieldNames(testCustomFields);
+        String[] expected = testCustomFields.split(",");
+
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testGetLocalizedLicenseDetails_descriptionFallsBackToShortDescription() throws Exception {
+        License license = new License("My Custom License", "A short description from DB",
+                new URI("https://example.com/license"), null, true, 0L);
+
+        // When the key is not in License.properties, should return the DB shortDescription
+        String result = DatasetUtil.getLocalizedLicenseDetails(license, "DESCRIPTION");
+        assertEquals("A short description from DB", result);
+    }
+
+    @Test
+    public void testGetLocalizedLicenseDetails_descriptionFallsBackToNameWhenShortDescriptionNull() throws Exception {
+        License license = new License("My Custom License", null,
+                new URI("https://example.com/license"), null, true, 0L);
+
+        // When shortDescription is null, should fall back to the license name
+        String result = DatasetUtil.getLocalizedLicenseDetails(license, "DESCRIPTION");
+        assertEquals("My Custom License", result);
+    }
+
+    @Test
+    public void testGetLocalizedLicenseDetails_nameFallsBackToLicenseName() throws Exception {
+        License license = new License("My Custom License", "A short description from DB",
+                new URI("https://example.com/license"), null, true, 0L);
+
+        // When the key is not in License.properties for NAME, should return the license name
+        String result = DatasetUtil.getLocalizedLicenseDetails(license, "NAME");
+        assertEquals("My Custom License", result);
     }
 }

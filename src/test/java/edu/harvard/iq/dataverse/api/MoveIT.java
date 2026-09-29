@@ -1,31 +1,44 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
+import edu.harvard.iq.dataverse.util.BundleUtil;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import static io.restassured.path.json.JsonPath.with;
+import io.restassured.response.Response;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
-import java.io.StringReader;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonObject;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.UNAUTHORIZED;
+import jakarta.json.JsonObject;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.FORBIDDEN;
+import static jakarta.ws.rs.core.Response.Status.OK;
+import static jakarta.ws.rs.core.Response.Status.UNAUTHORIZED;
+
 import org.hamcrest.CoreMatchers;
-import static org.hamcrest.CoreMatchers.equalTo;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+
+import static org.hamcrest.CoreMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class MoveIT {
 
     private static final Logger logger = Logger.getLogger(MoveIT.class.getCanonicalName());
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
+    }
+    @AfterAll
+    public static void afterClass() {
+        sendNotificationOnDatasetMoveSetting(false);
     }
 
     @Test
@@ -55,7 +68,7 @@ public class MoveIT {
         Response noPermToCreateDataset = UtilIT.createRandomDatasetViaNativeApi(curatorDataverseAlias1, authorApiToken);
         noPermToCreateDataset.prettyPrint();
         noPermToCreateDataset.then().assertThat().statusCode(UNAUTHORIZED.getStatusCode());
-        
+
         Response grantAuthorAddDataset = UtilIT.grantRoleOnDataverse(curatorDataverseAlias1, DataverseRole.DS_CONTRIBUTOR.toString(), "@" + authorUsername, curatorApiToken);
         grantAuthorAddDataset.prettyPrint();
         grantAuthorAddDataset.then().assertThat()
@@ -141,6 +154,81 @@ public class MoveIT {
                 .statusCode(OK.getStatusCode())
                 .body("data.message", equalTo("Dataset moved successfully."));
 
+    }
+
+    @Test
+    public void testMoveDatasetNotification() {
+        sendNotificationOnDatasetMoveSetting(true);
+        // Create the first user/dataverse (superuser)
+        Response createUser1 = UtilIT.createRandomUser();
+        createUser1.prettyPrint();
+        createUser1.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String user1Username = UtilIT.getUsernameFromResponse(createUser1);
+        String user1ApiToken = UtilIT.getApiTokenFromResponse(createUser1);
+        UtilIT.setSuperuserStatus(user1Username, true);
+
+        Response createDataverse1 = UtilIT.createRandomDataverse(user1ApiToken);
+        createDataverse1.prettyPrint();
+        createDataverse1.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        String dataverseAlias1 = UtilIT.getAliasFromResponse(createDataverse1);
+
+        // Create the second user/dataverse
+        Response createUser2 = UtilIT.createRandomUser();
+        createUser2.prettyPrint();
+        createUser2.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String user2Username = UtilIT.getUsernameFromResponse(createUser2);
+        String user2ApiToken = UtilIT.getApiTokenFromResponse(createUser2);
+
+        Response createDataverse2 = UtilIT.createRandomDataverse(user2ApiToken);
+        createDataverse2.prettyPrint();
+        createDataverse2.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        String dataverseAlias2 = UtilIT.getAliasFromResponse(createDataverse2);
+
+        // User2 creates dataset in DV2
+        Response createDataset = UtilIT.createRandomDatasetViaNativeApi(dataverseAlias2, user2ApiToken);
+        createDataset.prettyPrint();
+        createDataset.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        Integer datasetId = UtilIT.getDatasetIdFromResponse(createDataset);
+
+        // User1(superuser) moves the dataset from dataverse2 to dataverse1
+        Response moveDataset = UtilIT.moveDataset(datasetId.toString(), dataverseAlias1, user1ApiToken);
+        moveDataset.prettyPrint();
+        moveDataset.then().assertThat()
+                .statusCode(OK.getStatusCode())
+                .body("data.message", equalTo(BundleUtil.getStringFromBundle("datasets.api.moveDataset.success")));
+
+        // verify that a notification was sent to user1
+        Response getNotifications = UtilIT.getNotifications(user1ApiToken);
+        getNotifications.prettyPrint();
+        verifyNotification(getNotifications, dataverseAlias1);
+
+        // verify that a notification was sent to user2
+        getNotifications = UtilIT.getNotifications(user2ApiToken);
+        getNotifications.prettyPrint();
+        verifyNotification(getNotifications, dataverseAlias1);
+    }
+
+    private void verifyNotification(Response notificationListResponse, String dataverseAlias) {
+        notificationListResponse.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        boolean found = false;
+        List<Map<String, String>> notifications = notificationListResponse.body().jsonPath().getList("data");
+
+        for (Map<String, String> notification : notifications) {
+            if ("DATASETMOVED".equalsIgnoreCase(notification.get("type"))) {
+                if (notification.get("messageText") != null && notification.get("messageText").contains(dataverseAlias)) {
+                    found = true;
+                    assertTrue(notification.get("subjectText") != null && notification.get("subjectText").contains("has been moved"));
+                    assertTrue(notification.get("messageText") != null && notification.get("messageText").startsWith(BundleUtil.getStringFromBundle("notification.email.greeting")));
+                }
+            }
+        }
+        assertTrue(found);
     }
 
     @Test
@@ -275,9 +363,9 @@ public class MoveIT {
                 .statusCode(FORBIDDEN.getStatusCode())
                 .body("message", equalTo("Use the query parameter forceMove=true to complete the move. This dataset is linked to the new host dataverse or one of its parents. This move would remove the link to this dataset. "));
 
-        JsonObject linksBeforeData = Json.createReader(new StringReader(getLinksBefore.asString())).readObject();
-        Assert.assertEquals("OK", linksBeforeData.getString("status"));
-        Assert.assertEquals(dataverse2Alias + " (id " + dataverse2Id + ")", linksBeforeData.getJsonObject("data").getJsonArray("dataverses that link to dataset id " + datasetId).getString(0));
+        JsonObject linksBeforeData = JsonUtil.getJsonObject(getLinksBefore.asString());
+        assertEquals(datasetId, linksBeforeData.getJsonObject("data").getInt("id"));
+        assertEquals(dataverse2Id, linksBeforeData.getJsonObject("data").getJsonArray("linked-dataverses").get(0).asJsonObject().getInt("id"));
 
         boolean forceMove = true;
         Response forceMoveLinkedDataset = UtilIT.moveDataset(datasetId.toString(), dataverse2Alias, forceMove, superuserApiToken);
@@ -298,15 +386,123 @@ public class MoveIT {
                 .statusCode(OK.getStatusCode())
                 .body("feed.entry[0].id", CoreMatchers.endsWith(datasetPid));
 
+        UtilIT.sleepForReindex(datasetPid, superuserApiToken, 20);
         Response getLinksAfter = UtilIT.getDatasetLinks(datasetPid, superuserApiToken);
         getLinksAfter.prettyPrint();
         getLinksAfter.then().assertThat()
                 .statusCode(OK.getStatusCode());
 
-        JsonObject linksAfterData = Json.createReader(new StringReader(getLinksAfter.asString())).readObject();
-        Assert.assertEquals("OK", linksAfterData.getString("status"));
-        Assert.assertEquals(0, linksAfterData.getJsonObject("data").getJsonArray("dataverses that link to dataset id " + datasetId).size());
+        JsonObject linksAfterData = JsonUtil.getJsonObject(getLinksAfter.asString());
+        assertEquals("OK", linksAfterData.getString("status"));
+        assertEquals(0, linksAfterData.getJsonObject("data").getJsonArray("linked-dataverses").size());
+    }
+
+    @Test
+    public void testMoveDatasetsPerms() {
+
+        /*
+        Verify that permissions set on a dataset remain
+        after that dataaset is moved
+         */
+        Response createCurator = UtilIT.createRandomUser();
+        createCurator.prettyPrint();
+        createCurator.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String curatorUsername = UtilIT.getUsernameFromResponse(createCurator);
+        String curatorApiToken = UtilIT.getApiTokenFromResponse(createCurator);
+
+        Response createRando = UtilIT.createRandomUser();
+        createCurator.prettyPrint();
+        createCurator.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String randoUsername = UtilIT.getUsernameFromResponse(createRando);
+        String randoApiToken = UtilIT.getApiTokenFromResponse(createRando);
+
+        Response createCuratorDataverse1 = UtilIT.createRandomDataverse(curatorApiToken);
+        createCuratorDataverse1.prettyPrint();
+        createCuratorDataverse1.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        String curatorDataverseAlias1 = UtilIT.getAliasFromResponse(createCuratorDataverse1);
+
+        Response createAuthor = UtilIT.createRandomUser();
+        createAuthor.prettyPrint();
+        createAuthor.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String authorUsername = UtilIT.getUsernameFromResponse(createAuthor);
+        String authorApiToken = UtilIT.getApiTokenFromResponse(createAuthor);
+
+        Response grantAuthorAddDataset = UtilIT.grantRoleOnDataverse(curatorDataverseAlias1, DataverseRole.DS_CONTRIBUTOR.toString(), "@" + authorUsername, curatorApiToken);
+        grantAuthorAddDataset.prettyPrint();
+        grantAuthorAddDataset.then().assertThat()
+                .statusCode(OK.getStatusCode())
+                .body("data.assignee", equalTo("@" + authorUsername))
+                .body("data._roleAlias", equalTo("dsContributor"));
+
+        Response createDataset = UtilIT.createRandomDatasetViaNativeApi(curatorDataverseAlias1, authorApiToken);
+        createDataset.prettyPrint();
+        createDataset.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+
+        Integer datasetId = UtilIT.getDatasetIdFromResponse(createDataset);
+
+        Response datasetAsJson = UtilIT.nativeGet(datasetId, authorApiToken);
+        datasetAsJson.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        String identifier = JsonPath.from(datasetAsJson.getBody().asString()).getString("data.identifier");
+        assertEquals(10, identifier.length());
+
+        String protocol1 = JsonPath.from(datasetAsJson.getBody().asString()).getString("data.protocol");
+        String authority1 = JsonPath.from(datasetAsJson.getBody().asString()).getString("data.authority");
+        String identifier1 = JsonPath.from(datasetAsJson.getBody().asString()).getString("data.identifier");
+        String datasetPersistentId = protocol1 + ":" + authority1 + "/" + identifier1;
+
+        Response giveRandoPermission = UtilIT.grantRoleOnDataset(datasetPersistentId, DataverseRole.CURATOR, "@" + randoUsername, curatorApiToken);
+        giveRandoPermission.prettyPrint();
+        assertEquals(200, giveRandoPermission.getStatusCode());
+
+        Response createAuthorDataverse1 = UtilIT.createRandomDataverse(curatorApiToken);
+        createAuthorDataverse1.prettyPrint();
+        createAuthorDataverse1.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        String authorDataverseAlias1 = UtilIT.getAliasFromResponse(createAuthorDataverse1);
+
+        Response createSuperuser = UtilIT.createRandomUser();
+        createSuperuser.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String superusername = UtilIT.getUsernameFromResponse(createSuperuser);
+        String superuserApiToken = UtilIT.getApiTokenFromResponse(createSuperuser);
+        Response makeSuperuser = UtilIT.makeSuperUser(superusername);
+        makeSuperuser.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        Response moveDataset1 = UtilIT.moveDataset(datasetId.toString(), authorDataverseAlias1, superuserApiToken);
+        moveDataset1.prettyPrint();
+        moveDataset1.then().assertThat()
+                .statusCode(OK.getStatusCode())
+                .body("data.message", equalTo("Dataset moved successfully."));
+
+        Response roleAssignments = UtilIT.getRoleAssignmentsOnDataset(datasetId.toString(), null, superuserApiToken);
+        roleAssignments.prettyPrint();
+
+        /*
+        make sure the rando assigned role continues on the moved dataset
+        */
+        assertEquals(OK.getStatusCode(), roleAssignments.getStatusCode());
+        List<JsonObject> assignments = with(roleAssignments.body().asString()).param("curator", "curator").getJsonObject("data.findAll { data -> data._roleAlias == curator }");
+        assertEquals(1, assignments.size());
 
     }
 
+    private static void sendNotificationOnDatasetMoveSetting(boolean enable) {
+        Response resp;
+        if (enable) {
+            resp = UtilIT.enableSetting(SettingsServiceBean.Key.SendNotificationOnDatasetMove);
+        } else {
+            resp = UtilIT.deleteSetting(SettingsServiceBean.Key.SendNotificationOnDatasetMove);
+        }
+        resp.prettyPrint();
+        resp.then().assertThat()
+                .statusCode(OK.getStatusCode());
+    }
 }

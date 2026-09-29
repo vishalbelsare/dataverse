@@ -12,14 +12,14 @@ public class DatasetDTO implements java.io.Serializable {
         private String identifier;
         private String protocol;
         private String authority;
+        private String separator;
         private String globalIdCreateTime;
         private String publisher;
         private String publicationDate;
         private String metadataLanguage;
         private DatasetVersionDTO datasetVersion;
         private List<DataFileDTO> dataFiles;
-	public static final String DOI_PROTOCOL = "doi";
-	public static final String HDL_PROTOCOL = "hdl";
+    private Integer datasetFileCountLimit;
 
     public String getId() {
         return id;
@@ -51,6 +51,14 @@ public class DatasetDTO implements java.io.Serializable {
 
     public void setAuthority(String authority) {
         this.authority = authority;
+    }
+
+    public String getSeparator() {
+        return separator;
+    }
+
+    public void setSeparator(String separator) {
+        this.separator = separator;
     }
 
     public String getGlobalIdCreateTime() {
@@ -96,11 +104,22 @@ public class DatasetDTO implements java.io.Serializable {
 
     @Override
     public String toString() {
-        return "DatasetDTO{" + "id=" + id + ", identifier=" + identifier + ", protocol=" + protocol + ", authority=" + authority + ", globalIdCreateTime=" + globalIdCreateTime + ", datasetVersion=" + datasetVersion + ", dataFiles=" + dataFiles + '}';
+        return "DatasetDTO{" + "id=" + id + ", identifier=" + identifier + ", protocol=" + protocol + ", authority=" + authority + ", separator=" + separator + ", globalIdCreateTime=" + globalIdCreateTime + ", datasetVersion=" + datasetVersion + ", dataFiles=" + dataFiles + '}';
     }
 
+    public void setMetadataLanguage(String metadataLanguage) {
+        this.metadataLanguage = metadataLanguage;
+    }
+    
     public String getMetadataLanguage() {
         return metadataLanguage;
     }
 
+    public Integer getDatasetFileCountLimit() {
+        return datasetFileCountLimit;
+    }
+
+    public void setDatasetFileCountLimit(Integer datasetFileCountLimit) {
+        this.datasetFileCountLimit = datasetFileCountLimit;
+    }
 }

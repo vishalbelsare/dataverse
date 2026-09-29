@@ -8,6 +8,7 @@ A dataset in a Dataverse installation is a container for your data, documentatio
 .. contents:: |toctitle|
 	:local:
 
+.. _metadata-supported:
 
 Supported Metadata
 ==================
@@ -25,8 +26,9 @@ For more details about what Citation and Domain Specific Metadata is supported p
 Supported Metadata Export Formats
 ---------------------------------
 
-Once a dataset has been published, its metadata can be exported in a variety of other metadata standards and formats, which help make datasets more discoverable and usable in other systems, such as other data repositories. On each dataset page's metadata tab, the following exports are available:
+Once a dataset has been published, its metadata can be exported in a variety of other metadata standards and formats, which help make datasets more :doc:`discoverable </admin/discoverability>` and usable in other systems, such as other data repositories. On each dataset page's metadata tab, the following exports are available:
 
+- Croissant (example: :download:`max-croissant.json <../../../../src/test/resources/croissant/max/expected/max-croissant.json>`)
 - Dublin Core
 - DDI (Data Documentation Initiative Codebook 2.5)
 - DDI HTML Codebook (A more human-readable, HTML version of the DDI Codebook 2.5 metadata export)
@@ -36,15 +38,25 @@ Once a dataset has been published, its metadata can be exported in a variety of 
 - OpenAIRE
 - Schema.org JSON-LD
 
+Additional formats can be enabled. See :ref:`inventory-of-external-exporters` in the Installation Guide. For example:
+
+- RO-Crate: See also https://www.researchobject.org/ro-crate/dataverse
+
 Each of these metadata exports contains the metadata of the most recently published version of the dataset.
+
+For each dataset, links to each enabled metadata format are available programmatically via Signposting. For details, see :ref:`discovery-sign-posting` in the Admin Guide and :ref:`signposting-api` in the API Guide.
+
+.. _adding-new-dataset:
 
 Adding a New Dataset
 ====================
 
 #. Navigate to the Dataverse collection in which you want to add a dataset.
 #. Click on the "Add Data" button and select "New Dataset" in the dropdown menu. **Note:** If you are on the root Dataverse collection, your My Data page or click the "Add Data" link in the navbar, the dataset you create will be hosted in the root Dataverse collection. You can change this by selecting another Dataverse collection you have proper permissions to create datasets in, from the Host Dataverse collection dropdown in the create dataset form. This option to choose will not be available after you create the dataset.
-#. To quickly get started, enter at minimum all the required fields with an asterisk (e.g., the Dataset Title, Author, 
-   Description, Contact Email and Subject) to get a Data Citation with a DOI.
+#. To quickly get started, enter at minimum all the required fields with an asterisk (e.g., the Dataset Title, Author Name, Description Text, Point of Contact Email, and Subject) to get a Data Citation with a DOI.
+
+   #. When entering author identifiers, select the type from the dropdown (e.g. "ORCID") and under "Identifier" enter the full URL (e.g. "https://orcid.org/0000-0002-1825-0097") for identifiers that have a URL form. The shorter form of the unique identifier (e.g. "0000-0002-1825-0097") can also be entered, but URL form is preferred when available.
+
 #. Scroll down to the "Files" section and click on "Select Files to Add" to add all the relevant files to your Dataset. 
    You can also upload your files directly from your Dropbox. **Tip:** You can drag and drop or select multiple files at a time from your desktop
    directly into the upload widget. Your files will appear below the "Select Files to Add" button where you can add a
@@ -53,14 +65,16 @@ Adding a New Dataset
 
 Note: You can add additional metadata once you have completed the initial dataset creation by going to clicking the Edit button and selecting Metadata from the dropdown menu.
 
-.. _supported-html-fields:
+.. _supported-html-tags:
 
-Supported HTML Fields
----------------------
+Supported HTML Tags
+-------------------
 
 We currently only support the following HTML tags for any of our textbox metadata fields (i.e., Description) : <a>, <b>, <blockquote>, 
 <br>, <code>, <del>, <dd>, <dl>, <dt>, <em>, <hr>, <h1>-<h3>, <i>, <img>, <kbd>, <li>, <ol>, <p>, <pre>, <s>, <sup>, <sub>, 
 <strong>, <strike>, <u>, <ul>.
+
+.. _dataset-file-upload:
 
 File Upload
 ===========
@@ -80,7 +94,7 @@ HTTP Upload is a common browser-based file upload tool you may be familiar with 
 
 Once you have uploaded files, you will be able to edit file metadata, restrict access to files [#f1]_ , and/or add tags. Click "Save Changes" to complete the upload. If you uploaded a file by mistake, you can delete it before saving by clicking the checkbox to select the file, and then clicking the "Delete" button above the Files Table.
 
-File upload limit size varies based on Dataverse installation. The file upload size limit can be found in the text above the HTTP upload widget. If you need to upload a very large file or a very large *number* of files, consider using rsync + SSH upload if your Dataverse installation offers it.
+File upload limit size varies based on Dataverse installation. The file upload size limit can be found in the text above the HTTP upload widget. If you need to upload a very large file or a very large *number* of files, consider using DVUploader (see :ref:`DVUploader`).
 
 .. [#f1] Some Dataverse installations do not allow this feature.
 
@@ -89,37 +103,14 @@ Dropbox Upload
 
 Some Dataverse installations support the ability to upload files directly from Dropbox. To do so, click the "Upload from Dropbox" button, log in to Dropbox in the pop-up window, and select the files you'd like to transfer over.
 
-.. _rsync_upload:
+.. _folder-upload:
 
-rsync + SSH Upload
-------------------
+Folder Upload
+-------------
 
-rsync is typically used for synchronizing files and directories between two different systems, using SSH to connect rather than HTTP. Some Dataverse installations allow uploads using rsync, to facilitate large file transfers in a reliable and secure manner.
+Some Dataverse installations support the ability to upload files from a local folder and subfolders. To do this, click the "Upload from Folder" button, select the folder you wish to upload, select/unselect specific files, and click "Start Uploads". More detailed instructions are available in the `DVWebloader wiki <https://github.com/gdcc/dvwebloader/wiki#use>`_.
 
-File Upload Script
-~~~~~~~~~~~~~~~~~~
-
-An rsync-enabled Dataverse installation has a file upload process that differs from the traditional browser-based upload process you may be used to. In order to transfer your data to the Dataverse installation's storage, you will need to complete the following steps:
-
-1. Create your dataset. In rsync-enabled Dataverse installations, you cannot upload files until the dataset creation process is complete. After you hit "Save Dataset" on the Dataset Creation page, you will be taken to the page for your dataset.
-
-2. On the dataset page, click the "+ Upload Files" button. This will open a box with instructions and a link to the file upload script.
-
-3. Make sure your files are ready for upload. You will need to have one directory that you can point the upload script to. All files in this directory and in any subdirectories will be uploaded. The directory structure will be preserved, and will be reproduced when your dataset is downloaded from the Dataverse installation. Note that your data will be uploaded in the form of a data package, and each dataset can only host one such package. Be sure that all files you want to include are present before you upload.
-
-4. Download the rsync file upload script by clicking the "Download Script" button in the Upload Files instruction box. There are no requirements for where you save the script; put it somewhere you can find it. Downloading the upload script will put a temporary lock on your dataset to prepare it for upload. While your dataset is locked, you will not be able to delete or publish your dataset, or edit its metadata. Once you upload your files and Dataverse installation processes them, your dataset will be automatically unlocked and these disabled functions will be enabled again. If you have downloaded the script and locked your dataset, but you have then changed your mind and decided *not* to upload files, please contact Support about unlocking your dataset.
-
-5. To begin the upload process, you will need to run the script you downloaded. For this, you will have to go outside your browser and open a terminal (AKA command line) window on your computer. Use the terminal to navigate to the directory where you saved the upload script, and run the command that the Upload Files instruction box provides. This will begin the upload script. Please note that this upload script will expire 7 days after you downloaded it. If it expires and you still need to use it, simply download the script from the Dataverse installation again.
-
-**Note:** Unlike other operating systems, Windows does not come with rsync supported by default. We have not optimized this feature for Windows users, but you may be able to get it working if you install the right Unix utilities. (If you have found a way to get this feature working for you on Windows, you can contribute it to our project. Please reference our `Contributing to the Dataverse Project <https://github.com/IQSS/dataverse/blob/master/CONTRIBUTING.md>`_ document in the root of the source tree.)
-
-6. Follow the instructions provided by the upload script running in your terminal. It will direct you to enter the full path of the directory where your dataset files are located, and then it will start the upload process. Once you've initiated the upload, if you need to cancel it then you can do so by canceling the script running in your terminal window. If your upload gets interrupted, you can resume it from the same point later.
-
-7. Once the upload script completes its job, the Dataverse installation will begin processing your data upload and running a checksum validation. This may take some time depending on the file size of your upload. During processing, you will see a blue bar at the bottom of the dataset page that reads "Upload in progress..." 
-
-8. Once processing is complete, you will be notified. At this point you can publish your dataset and your data will be available for download on the dataset page.
-
-**Note:** A dataset can only hold one data package. If you need to replace the data package in your dataset, contact Support.
+.. _DVUploader:
 
 Command-line DVUploader
 -----------------------
@@ -129,15 +120,20 @@ The open-source DVUploader tool is a stand-alone command-line Java application t
 Usage
 ~~~~~
 
-The DVUploader is open source and is available as source, as a Java jar, and with documentation at https://github.com/IQSS/dataverse-uploader. The DVUploader requires Java 1.8+. Users will need to install Java if they don't already have it and then download the DVUploader-v1.0.0.jar file. Users will need to know the URL of the Dataverse installation, the DOI of their existing dataset, and have generated an API Key for the Dataverse installation (an option in the user's profile menu). 
+The DVUploader is open source and is available as source, as a Java jar, and with documentation at https://github.com/GlobalDataverseCommunityConsortium/dataverse-uploader. The DVUploader requires Java 1.8+. Users will need to install Java if they don't already have it and then download the latest release of the DVUploader - jar file. Users will need to know the URL of the Dataverse installation, the DOI of their existing dataset, and have generated an API Key for the Dataverse installation (an option in the user's profile menu). 
 
 Basic usage is to run the command: ::
 
-    java -jar DVUploader-v1.0.0.jar -server=<Dataverse Installation URL> -did=<Dataset DOI> -key=<User's API Key> <file or directory list>
+    java -jar DVUploader-*.jar -server=<Dataverse Installation URL> -did=<Dataset DOI> -key=<User's API Key> <file or directory list>
 
 Additional command line arguments are available to make the DVUploader list what it would do without uploading, limit the number of files it uploads, recurse through sub-directories, verify fixity, exclude files with specific extensions or name patterns, and/or wait longer than 60 seconds for any Dataverse installation ingest lock to clear (e.g. while the previously uploaded file is processed, as discussed in the :ref:`File Handling <file-handling>` section below). 
 
-DVUploader is a community-developed tool, and its creation was primarily supported by the Texas Digital Library. Further information and support for DVUploader can be sought at `the project's GitHub repository <https://github.com/IQSS/dataverse-uploader>`_ . 
+DVUploader is a community-developed tool, and its creation was primarily supported by the Texas Digital Library. Further information and support for DVUploader can be sought at `the project's GitHub repository <https://github.com/GlobalDataverseCommunityConsortium/dataverse-uploader>`_ . 
+
+Integrations Dashboard Uploader
+-------------------------------
+
+There is an experimental uploader described at :ref:`integrations-dashboard` that provides a graphical user interface (GUI) for uploading files from a local file system and various remote locations such as GitHub.
 
 .. _duplicate-files:
 
@@ -153,6 +149,19 @@ Beginning with Dataverse Software 5.0, the way a Dataverse installation handles 
 - If a user attempts to replace a file with another file that has the same checksum, an error message will be displayed and the file will not be able to be replaced.
 - If a user attempts to replace a file with a file that has the same checksum as a different file in the dataset, a warning will be displayed.
 
+BagIt Support
+-------------
+
+BagIt is a set of hierarchical file system conventions designed to support disk-based storage and network transfer of arbitrary digital content. It offers several benefits such as integration with digital libraries, easy implementation, and transfer validation. See `the Wikipedia article <https://en.wikipedia.org/wiki/BagIt>`__ for more information.
+
+If the Dataverse installation you are using has enabled BagIt file handling, when uploading BagIt files the repository will validate the checksum values listed in each BagIt’s manifest file against the uploaded files and generate errors about any mismatches. The repository will identify a certain number of errors, such as the first five errors in each BagIt file, before reporting the errors.
+
+|bagit-image1|
+
+You can fix the errors and reupload the BagIt files.
+
+More information on how your admin can enable and configure the BagIt file handler can be found in the :ref:`Installation Guide <BagIt File Handler>`.
+
 .. _file-handling:
 
 File Handling
@@ -160,10 +169,37 @@ File Handling
 
 Certain file types in the Dataverse installation are supported by additional functionality, which can include downloading in different formats, previews, file-level metadata preservation, file-level data citation; and exploration through data visualization and analysis. See the sections below for information about special functionality for specific file types.
 
+.. _file-previews:
+
 File Previews
 -------------
 
-Dataverse installations can add previewers for common file types uploaded by their research communities. The previews appear on the file page. If a preview tool for a specific file type is available, the preview will be created and will display automatically, after terms have been agreed to or a guestbook entry has been made, if necessary. File previews are not available for restricted files unless they are being accessed using a Private URL. See also :ref:`privateurl`.
+Dataverse installations can add previewers for common file types uploaded by their research communities. The previews appear on the file page. If a preview tool for a specific file type is available, the preview will be created and will display automatically, after terms have been agreed to or a guestbook entry has been made, if necessary. File previews are not available for restricted files unless they are being accessed using a Preview URL. See also :ref:`previewUrl`. When the dataset license is not the default license, users will be prompted to accept the license/data use agreement before the preview is shown. See also :ref:`license-terms`.
+
+.. note::
+   Some previewers run purely in the browser and make direct (JavaScript) requests back to the Dataverse API endpoints to retrieve file contents, metadata, or signed URLs. For these previewers to function when hosted on a different origin (e.g., a CDN or a separate previewer service), the Dataverse installation must have CORS enabled via :ref:`dataverse.cors.origin <dataverse.cors.origin>`. Administrators should configure the list of allowed origins to include the host serving the previewers.
+
+Previewers are available for the following file types:
+
+- Text
+- PDF
+- Markdown
+- Tabular (CSV, Excel, etc., see :doc:`tabulardataingest/index`)
+- Code (R, etc.)
+- Images (PNG, GIF, JPG)
+- Audio (MP3, MPEG, WAV, OGG, M4A)
+- Video (MP4, OGG, Quicktime)
+- Zip (preview and extract/download)
+- HTML
+- GeoJSON
+- GeoTIFF
+- Shapefile
+- NetCDF/HDF5
+- Hypothes.is
+
+Additional file types will be added to the `dataverse-previewers <https://github.com/gdcc/dataverse-previewers>`_ repo before they are listed above so please check there for the latest information or to request (or contribute!) an additional file previewer.
+
+Installation of previewers is explained in the :doc:`/admin/external-tools` section of in the Admin Guide.
 
 Tabular Data Files
 ------------------
@@ -175,11 +211,12 @@ Additional download options available for tabular data (found in the same drop-d
 - As tab-delimited data (with the variable names in the first row); 
 - The original file uploaded by the user; 
 - Saved as R data (if the original file was not in R format); 
-- Variable Metadata (as a `DDI Codebook <http://www.ddialliance.org/Specification/DDI-Codebook/>`_ XML file);
-- Data File Citation (currently in either RIS, EndNote XML, or BibTeX format); 
-- All of the above, as a zipped bundle. 
+- Variable Metadata (as a `DDI Codebook <https://www.ddialliance.org/Specification/DDI-Codebook/>`_ XML file);
+- Data File Citation (currently in either RIS, EndNote XML, or BibTeX format).
 
 Differentially Private (DP) Metadata can also be accessed for restricted tabular files if the data depositor has created a DP Metadata Release. See :ref:`dp-release-create` for more information.
+
+.. _research-code:
 
 Research Code
 -------------
@@ -196,7 +233,7 @@ The following are general guidelines applicable to all programming languages.
 - Consider providing notes (in the README) on the expected code outputs or adding tests in the code, which would ensure that its functionality is intact.
 
 Capturing code dependencies will help other researchers recreate the necessary runtime environment. Without it, your code will not be able to run correctly (or at all). 
-One option is to use platforms such as `Whole Tale <https://wholetale.org>`_, `Jupyter Binder <https://mybinder.org>`_ or `Renku <https://renkulab.io>`_, which facilitate research reproducibility. Have a look at `Dataverse Integrations <https://guides.dataverse.org/en/5.4/admin/integrations.html>`_ for more information. 
+One option is to use platforms such as `Jupyter Binder <https://mybinder.org>`_ or `Renku <https://renkulab.io>`_, which facilitate research reproducibility. For more information, have a look at :doc:`/admin/integrations` in the Admin Guide, especially the sections on :ref:`binder` and :ref:`renku`.
 Another option is to use an automatic code dependency capture, which is often supported through the programming language. Here are a few examples:
 
 - If you are using the conda package manager, you can export your environment with the command ``conda env export > environment.yml``. For more information, see the `official documentation <https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#sharing-an-environment>`__.
@@ -211,21 +248,160 @@ Finally, automating your code can be immensely helpful to the code and research 
 
 **Note:** Capturing code dependencies and automating your code will create new files in your directory. Make sure to include them when depositing your dataset.
 
+Computational Workflow
+----------------------
+
+Computational Workflow Definition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Computational workflows precisely describe a multi-step process to coordinate multiple computational tasks and their data dependencies that lead to data products in a scientific application. The computational tasks take different forms, such as running code (e.g. Python, C++, MATLAB, R, Julia), invoking a service, calling a command-line tool, accessing a database (e.g. SQL, NoSQL), submitting a job to a compute cloud (e.g. on-premises cloud, AWS, GCP, Azure), and execution of data processing scripts or workflow. The following diagram shows an example of a computational workflow with multiple computational tasks.
+
+|cw-image1|
+
+
+FAIR Computational Workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The FAIR Principles (Findable, Accessible, Interoperable, Reusable) apply to computational workflows (https://doi.org/10.1162/dint_a_00033) in two areas: as FAIR data and as FAIR criteria for workflows as digital objects. In the FAIR data area, "*properly designed workflows contribute to FAIR data principles since they provide the metadata and provenance necessary to describe their data products, and they describe the involved data in a formalized, completely traceable way*" (https://doi.org/10.1162/dint_a_00033). Regarding the FAIR criteria for workflows as digital objects, "*workflows are research products in their own right, encapsulating methodological know-how that is to be found and published, accessed and cited, exchanged and combined with others, and reused as well as adapted*" (https://doi.org/10.1162/dint_a_00033).
+
+How to Create a Computational Workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are multiple approaches to creating computational workflows. You may consider standard frameworks and tools such as Common Workflow Language (CWL), Snakemake, Galaxy, Nextflow, Ruffus or *ad hoc* methods using different programming languages (e.g. Python, C++, MATLAB, Julia, R), notebooks (e.g. Jupyter Notebook, R Notebook, and MATLAB Live Script) and command-line interpreters (e.g. Bash). Each computational task is defined differently, but all meet the definition of a computational workflow and all result in data products. You can find a few examples of computational workflows in the following GitHub repositories, where each follows several aspects of FAIR principles:
+
+- Common Workflow Language (`GitHub Repository URL <https://github.com/fasrc/epa_cwl_airflow>`__)
+- R Notebook (`GitHub Repository URL <https://github.com/fasrc/R_computational_workflow>`__)
+- Jupyter Notebook (`GitHub Repository URL <https://github.com/fasrc/python-computational-workflow>`__)
+- MATLAB Script (`GitHub Repository URL <https://github.com/fasrc/Matlab_computational_workflow>`__)
+
+You are encouraged to review these examples when creating a computational workflow and publishing in a Dataverse repository.
+
+At https://workflows.community, the Workflows Community Initiative offers resources for computational workflows, such as a list of workflow systems (https://workflows.community/systems) and other workflow registries (https://workflows.community/registries). The initiative also helps organize working groups related to workflows research, development and application.
+
+How to Upload Your Computational Workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After you :ref:`upload your files <dataset-file-upload>`, you can apply a "Workflow" tag to your workflow files, such as your Snakemake or R Notebooks files, so that you and others can find them more easily among your deposit’s other files.
+
+|cw-image3|
+
+|cw-image4|
+
+How to Describe Your Computational Workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Dataverse installation you are using may have enabled Computational Workflow metadata fields for your use. If so, when :ref:`editing your dataset metadata <adding-new-dataset>`, you will see the fields described below.
+
+|cw-image2|
+
+As described in the :ref:`metadata-references` section of the :doc:`/user/appendix`, the three fields are adapted from `Bioschemas Computational Workflow Profile, version 1.0 <https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE>`__ and `Codemeta <https://codemeta.github.io/terms/>`__:
+
+- **Workflow Type**: The kind of Computational Workflow, which is designed to compose and execute a series of computational or data manipulation steps in a scientific application
+- **External Code Repository URL**: A link to another public repository where the un-compiled, human-readable code and related code is also located (e.g., GitHub, GitLab, SVN)
+- **Documentation**: A link (URL) to the documentation or text describing the Computational Workflow and its use
+
+
+How to Search for Computational Workflows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If the search page of the Dataverse repository you are using includes a "Dataset Feature" facet with a Computational Workflows link, you can follow that link to find only datasets that contain computational workflows.
+
+You can also search on the "Workflow Type" facet, if the Dataverse installation has the field enabled, to find datasets that contain certain types of computational workflows, such as workflows written in Common Workflow Language files or Jupyter Notebooks.
+
+|cw-image5|
+
+You can also search for files within datasets that have been tagged as "Workflow" files by clicking the Files checkbox to show only files and using the File Tag facet to show only files tagged as "Workflow".
+
+|cw-image6|
+
+.. _fits:
+
 Astronomy (FITS)
 ----------------
 
-Metadata found in the header section of `Flexible Image Transport System (FITS) files <http://fits.gsfc.nasa.gov/fits_primer.html>`_ are automatically extracted by the Dataverse Software, aggregated and displayed in the Astronomy Domain-Specific Metadata of the Dataset that the file belongs to. This FITS file metadata, is therefore searchable and browsable (facets) at the Dataset-level.
+Metadata found in the header section of `Flexible Image Transport System (FITS) files <https://fits.gsfc.nasa.gov/fits_primer.html>`_ are automatically extracted by the Dataverse Software, aggregated and displayed in the Astronomy Domain-Specific Metadata of the Dataset that the file belongs to. This FITS file metadata, is therefore searchable and browsable (facets) at the Dataset-level.
+
+.. _geojson:
+
+GeoJSON
+-------
+
+A map will be shown as a preview of GeoJSON files when the previewer has been enabled (see :ref:`file-previews`). See also a `video demo <https://www.youtube.com/watch?v=EACJJaV3O1c&t=588s>`_ of the GeoJSON previewer by its author, Kaitlin Newson.
+
+.. _geotiff:
+
+GeoTIFF
+-------
+
+A map is also displayed as a preview of GeoTiFF image files, whose previewer must be enabled (see :ref:`file-previews`). Since GeoTIFFs do not have their own mimetype, it is advisable to use this previewer only when GeoTIFFs are used (and not "normal" TIFs). For performance reasons, this previewer has a file size limit of 15 MB and a row/column limit of 50,000 so that larger files are not loaded.
+
+.. _shapefile:
+
+Shapefile
+---------
+
+Another previewer can be enabled for shapefiles (see :ref:`file-previews`). This previewer only works with zipped shapefiles (see :doc:`/developers/geospatial`). A file size limit of 20 MB is set for this previewer (also because of performance reasons).
+
+.. _netcdf-and-hdf5:
+
+NetCDF and HDF5
+---------------
+
+H5Web Previewer
+~~~~~~~~~~~~~~~
+
+NetCDF and HDF5 files can be explored and visualized with H5Web_, which has been adapted into a file previewer tool (see :ref:`file-previews`) that can be enabled in your Dataverse installation.
+
+.. _H5Web: https://h5web.panosc.eu
+
+|h5web|
+
+NcML
+~~~~
+
+For NetCDF and HDF5 files, an attempt will be made to extract metadata in NcML_ (XML) format and save it as a public auxiliary file, even if the file is restricted. (See also :doc:`/developers/aux-file-support` in the Developer Guide.) A previewer for these NcML files is available (see :ref:`file-previews`).
+
+Please note that only modern versions of these formats, the ones based on HDF5 such as NetCDF 4+ and HDF5 itself (rather than HDF4), will yield an NcML auxiliary file.
+
+.. _NcML: https://docs.unidata.ucar.edu/netcdf-java/current/userguide/ncml_overview.html
+
+Geospatial Bounding Box
+~~~~~~~~~~~~~~~~~~~~~~~
+
+An attempt will be made to extract a geospatial bounding box (west, south, east, north) from NetCDF and HDF5 files and then insert these values into the geospatial metadata block, if enabled.
+
+This is the mapping that is used:
+
+- geospatial_lon_min: West Longitude
+- geospatial_lon_max: East Longitude
+- geospatial_lat_max: North Latitude
+- geospatial_lat_min: South Latitude
+
+Please note the following rules regarding these fields:
+
+- West Longitude and East Longitude are expected to be in the range of -180 and 180. (When using :ref:`geospatial-search`, you should use this range for longitude.)
+- If West Longitude and East Longitude are both over 180 (outside the expected -180:180 range), 360 will be subtracted to shift the values from the 0:360 range to the expected -180:180 range.
+- If either West Longitude or East Longitude are less than zero but the other longitude is greater than 180 (which would imply an indeterminate domain, a lack of clarity of if the domain is -180:180 or 0:360), metadata will be not be extracted.
+- If the bounding box was successfully populated, the subsequent removal of the NetCDF or HDF5 file from the dataset does not automatically remove the bounding box from the dataset metadata. You must remove the bounding box manually, if desired.
+- This feature is disabled if S3 direct upload is enabled (see :ref:`s3-direct-upload-features-disabled`) unless :ref:`dataverse.netcdf.geo-extract-s3-direct-upload` has been set to true.
+
+If the bounding box was successfully populated, :ref:`geospatial-search` should be able to find it.
+
+.. _compressed-files:
 
 Compressed Files
 ----------------
 
-Compressed files in .zip format are unpacked automatically. If a .zip file fails to unpack for whatever reason, it will upload as is. If the number of files inside are more than a set limit (1,000 by default, configurable by the Administrator), you will get an error message and the .zip file will upload as is.
+Depending on the configuration, compressed files in .zip format are unpacked automatically. If a .zip file is not unpacked, it will upload as is.
+If the number of files inside are more than a set limit (1,000 by default, configurable by the Administrator), you will get an error message and the .zip file will upload as is.
 
 If the uploaded .zip file contains a folder structure, the Dataverse installation will keep track of this structure. A file's location within this folder structure is displayed in the file metadata as the File Path. When you download the contents of the dataset, this folder structure will be preserved and files will appear in their original locations. 
 
 These folder names are subject to strict validation rules. Only the following characters are allowed: the alphanumerics, '_', '-', '.' and ' ' (white space). When a zip archive is uploaded, the folder names are automatically sanitized, with any invalid characters replaced by the '.' character. Any sequences of dots are further replaced with a single dot. For example, the folder name ``data&info/code=@137`` will be converted to ``data.info/code.137``. When uploading through the Web UI, the user can change the values further on the edit form presented, before clicking the 'Save' button. 
 
 .. note:: If you upload multiple .zip files to one dataset, any subdirectories that are identical across multiple .zips will be merged together when the user downloads the full dataset.
+
+If a .zip file is not unpacked and Zip Previewer is installed (see :ref:`file-previews`), it will be possible for users to view the contents of the zip file and to download individual files from within the .zip.
 
 Other File Types
 ----------------
@@ -246,8 +422,12 @@ Differentially Private (DP) Metadata can be accessed for restricted tabular file
 
 See also :ref:`terms-of-access` and :ref:`permissions`.
 
+.. _edit-files:
+
 Edit Files
 ==========
+
+.. _edit-file-metadata:
 
 Edit File Metadata
 ------------------
@@ -259,6 +439,7 @@ Go to the dataset you would like to edit, where you will see the listing of file
 - Restrict the selected files
 - Unrestrict the selected files (only if the selected files are restricted)
 - Add tags to the selected files
+- Embargo the selected files
 
 You will not have to leave the dataset page to complete these action, except for editing file metadata, which will bring you to the Edit Files page. There you will have to click the "Save Changes" button to apply your edits and return to the dataset page.
 
@@ -301,11 +482,13 @@ Terms
 
 Dataset terms can be viewed and edited from the Terms tab of the dataset page, or under the Edit dropdown button of a Dataset. There, you can set up how users can use your data once they have downloaded it (via a standard license or, if allowed, custom terms), how they can access your data if you have files that are restricted (terms of access), and enable a Guestbook for your dataset so that you can track who is using your data and for what purposes. These are explained in further detail below:
 
+.. _choosing-license:
+
 Choosing a License
 ------------------
 
 Each Dataverse installation provides a set of license(s) data can be released under, and whether users can specify custom terms instead (see below). 
-One of the available licenses (often the `Creative Commons CC0 Public Domain Dedication <https://creativecommons.org/publicdomain/zero/1.0/>`_) serves as the default if you do not make an explicit choice.
+One of the available licenses (often the `Creative Commons CC0 Public Domain Dedication <https://creativecommons.org/publicdomain/zero/1.0>`_) serves as the default if you do not make an explicit choice.
 If you want to apply one of the other available licenses to your dataset, you can change it on the Terms tab of your Dataset page.
 
 License Selection and Professional Norms
@@ -318,7 +501,7 @@ For example, the `Creative Commons <https://creativecommons.org>`_ organization 
 (These licenses may or may not be available in the Dataverse instance you are using, but we expect them to be common in the community.)
 Each Creative Commons license typically specifies simple terms for how the IP must be used, reused, shared, and attributed and includes language intended to address variations in the laws of different countries.
 
-In addition to these licenses, Creative Commons also the `CC0 1.0 Universal (CC0 1.0) Public Domain Dedication <https://creativecommons.org/share-your-work/public-domain/cc0>`_ which allows you to unambiguously waive all copyright control over your data in all jurisdictions worldwide. 
+In addition to these licenses, Creative Commons also provides the `CC0 1.0 Universal (CC0 1.0) Public Domain Dedication <https://creativecommons.org/share-your-work/public-domain/cc0>`_ which allows you to unambiguously waive all copyright control over your data in all jurisdictions worldwide.
 Data released with CC0 can be freely copied, modified, and distributed (even for commercial purposes) without violating copyright. 
 In most parts of the world, factual data is exempt from copyright anyway, but applying CC0 removes all ambiguity and makes the legal copyright status of the data as clear as possible. 
 
@@ -327,9 +510,11 @@ When available. CC0 can be a good choice for datasets because it facilitates reu
 Data depositors and data users should also understand that while licenses define legal use, they do not exempt a Dataverse installation's users from following ethical and professional norms in scholarly communications.
 For example, though CC0 waives a dataset owner's legal copyright controls over the data, users, as scholarly researchers, are still expected to cite the data they use, giving credit to the data's authors following ethical and professional norms in scholarly communications.
 This is true of other licenses as well - users should cite data as appropriate even if the specified license does not require it. 
-The `Dataverse Community Norms <https://dataverse.org/best-practices/dataverse-community-norms>`_ * details additional areas where data users should follow societal norms and scientific best practices.
+The `Dataverse Community Norms <https://dataverse.org/best-practices/dataverse-community-norms>`_\* detail additional areas where data users should follow societal norms and scientific best practices.
 
-\* **Legal Disclaimer:** these `Community Norms <https://dataverse.org/best-practices/dataverse-community-norms>`_ are not a substitute for the CC0 waiver or custom terms and licenses applicable to each dataset. The Community Norms are not a binding contractual agreement, and that downloading datasets from a Dataverse installation does not create a legal obligation to follow these policies.  
+\* **Legal Disclaimer:** these `Community Norms <https://dataverse.org/best-practices/dataverse-community-norms>`_ are not a substitute for the CC0 waiver or custom terms and licenses applicable to each dataset. The Community Norms are not a binding contractual agreement, and downloading datasets from a Dataverse installation does not create a legal obligation to follow these policies.
+
+.. _custom-terms:
 
 Custom Terms of Use for Datasets
 --------------------------------
@@ -376,7 +561,7 @@ This is where you will enable a particular Guestbook for your dataset, which is 
 Roles & Permissions
 ===================
 
-Dataverse installation user accounts can be granted roles that define which actions they are allowed to take on specific Dataverse collections, datasets, and/or files. Each role comes with a set of permissions, which define the specific actions that users may take.
+Dataverse installation user accounts can be granted roles that define which actions they are allowed to take on specific Dataverse collections, datasets, and/or files. Each role comes with a set of permissions, which define the specific actions that users may take. It is not possible to grant a role that comes with a permission that the granting user themselves does not have.
 
 Roles and permissions may also be granted to groups. Groups can be defined as a set of Dataverse user accounts, a collection of IP addresses (e.g. all users of a library's computers), or a collection of all users who log in using a particular institutional login (e.g. everyone who logs in with a particular university's account credentials).
 
@@ -407,7 +592,26 @@ When you access a dataset's file-level permissions page, you will see two sectio
 Data Provenance
 ===============
 
-Data Provenance is a record of where your data came from and how it reached its current form. It describes the origin of a data file, any transformations that have been made to that file, and any persons or organizations associated with that file. A data file's provenance can aid in reproducibility and compliance with legal regulations. The Dataverse Software can help you keep track of your data's provenance. Currently, the Dataverse Software only makes provenance information available to those who have edit permissions on your dataset, but in the future we plan to expand this feature to make provenance information available to the public. 
+Dataset-Level
+-------------
+When configured, the Dataverse software can allow data depositors, curators, and administrators
+to provide information about why a new version of a dataset was created and/or how its contents
+differ from a prior version. These users can add an optional "Version Note" to a draft dataset
+version in the dataset page/versions tab or during publication. This information is publicly 
+available via the user interface (dataset page/versions tab), API, and in metadata exports
+(including the DataCite, JSON, DDI, and OAI_ORE exports).
+
+File-Level
+----------
+
+Data Provenance is a record of where your data came from and how it reached its current form.
+It describes the origin of a data file, any transformations that have been made to that file,
+and any persons or organizations associated with that file. A data file's provenance can aid in
+reproducibility and compliance with legal regulations. When configured to support provenance, 
+the Dataverse Software can help you keep track of your data's provenance. Currently, the Dataverse
+Software only makes provenance information available to those who have edit permissions on your
+dataset, but in the future we plan to expand this feature to make provenance information available
+to the public. 
 
 .. COMMENTED OUT UNTIL PROV FILE DOWNLOAD IS ADDED: , and make it available to those who need it.
 
@@ -423,7 +627,7 @@ A **Provenance File** is the preferred way of submitting provenance information 
 
 Once you upload a provenance file, the Dataverse installation will need some additional information in order to accurately connect it to your data file. Once provenance file upload finishes, an input box labeled "Connect entity" will appear under the file. Provenance files contain a list of "entities", which include your data file as well as any objects associated with it (e.g. a chart, a spellchecker, etc.). You will need to tell the Dataverse installation which entity within the provenance file represents your data file. You may type the name of the entity into the box, or click the arrow next to the box and select the entity from a list of all entities in the provenance file. 
 
-For more information on entities and the contents of provenance files, see `the W3C PROV Model Primer  <https://www.w3.org/TR/prov-primer/#intuitive-overview-of-prov>`_.
+For more information on entities and the contents of provenance files, see `the W3C PROV Model Primer  <https://www.w3.org/TR/prov-primer/#intuitive-overview-of-prov>`_. The uploaded file must be in JSON format as described in `the PROV-JSON specification  <https://www.w3.org/submissions/2013/SUBM-prov-json-20130424/>`_.
 
 Once you've uploaded your Provenance File and connected the proper entity, you can hit the Preview button to view the raw JSON of the Provenance File. This can help you confirm that you've uploaded the right file. Be sure to double-check it, because the Provenance File will made *permanent* once it's finalized. At that point you will not be able to *replace*, *remove*, or otherwise *edit* the Provenance File. This ensures that the Provenance File maintains a stable, immutable record of the data file's history. This finalization of the Provenance File happens at different points depending on the status of your data file. If this is a brand new data file that has never been published before, then its associated Provenance File will be made permanent once you publish the dataset. If this data file *has* been published in a previous version of your dataset, then its associated Provenance File will be made permanent as soon as you upload the Provenance File and click "Save Changes" on the warning popup.
 
@@ -494,6 +698,8 @@ Adding Widgets to an OpenScholar Website
 #. Click on the Settings Cog and select Layout
 #. At the top right, select Add New Widget and under Misc. you will see the Dataverse Collection and the Dataverse Dataset Citation Widgets. Click on the widget you would like to add, fill out the form, and then drag it to where you would like it to display in the page.
 
+.. _publish-dataset:
+
 Publish Dataset
 ===============
 
@@ -506,33 +712,46 @@ Whenever you edit your dataset, you are able to publish a new version of the dat
 Note: Prior to publishing your dataset the Data Citation will indicate that this is a draft but the "DRAFT VERSION" text
 will be removed as soon as you Publish.
 
+.. _submit-for-review:
+
 Submit for Review
 =================
 
-If you have a Contributor role (can edit metadata, upload files, and edit files, edit Terms, Guestbook, and Submit datasets for review) in a Dataverse collection you can submit your dataset for review when you have finished uploading your files and filling in all of the relevant metadata fields. To Submit for Review, go to your dataset and click on the "Submit for Review" button, which is located next to the "Edit" button on the upper-right. Once Submitted for Review: the Admin or Curator for this Dataverse collection will be notified to review this dataset before they decide to either "Publish" the dataset or "Return to Author". If the dataset is published the contributor will be notified that it is now published. If the dataset is returned to the author, the contributor of this dataset will be notified that they need to make modifications before it can be submitted for review again.
+If you have a Contributor role (can edit metadata, upload files, and edit files, edit Terms, Guestbook, and submit datasets for review) in a Dataverse collection you can submit your dataset for review when you have finished uploading your files and filling in all of the relevant metadata fields. To submit your dataset for review, go to your dataset and click the "Submit for Review" button, which is located next to the "Edit" button on the upper-right. In the confirmation popup, you can review your selection of license (or custom terms, if available). Once you have confirmed the submission, the Admin or Curator for this Dataverse collection will be notified to review this dataset before they decide to either publish the dataset or click "Return to Author". If the dataset is published, the contributor will be notified that it is now published. If the dataset is returned to the author, the contributor of this dataset will be notified that they need to make modifications before it can be submitted for review again.
 
-.. _privateurl:
+.. _previewUrl:
 
-Private URL to Review Unpublished Dataset
+Preview URL to Review Unpublished Dataset
 =========================================
 
-Creating a Private URL for your dataset allows you to share your dataset (for viewing and downloading of files) before it is published to a wide group of individuals who may not have a user account on the Dataverse installation. Anyone you send the Private URL to will not have to log into the Dataverse installation to view the dataset.
+Creating a Preview URL for a draft version of your dataset allows you to share your dataset (for viewing and downloading files, including :ref:`restricted <restricted-files>` and :ref:`embargoed <embargoes>` files) before it is published to a wide group of people who might not have a user account on the Dataverse installation. Anyone you send the Preview URL to will not have to log in to the Dataverse installation to view the unpublished dataset. Once a dataset has been published, you may create new General Preview URLs for subsequent draft versions, but the Anonymous Preview URL will no longer be available.
 
-**Note:** To create a Private URL, you must have the *ManageDatasetPermissions* permission for your dataset, usually given by the :ref:`roles <permissions>` *Curator* or *Administrator*.
+**Note:** To create a Preview URL, you must have the *ManageDatasetPermissions* permission for your draft dataset, usually given by the :ref:`roles <permissions>` *Curator* or *Administrator*. Take into account that before being able to create an Anonymous Preview URL, your system administrator much configure :ref:`a setting <:AnonymizedFieldTypeNames>` that indicates which fields will be withheld (Author Name, for example) when dataset access occurs via a Preview Url with Anonymized Access.
 
 #. Go to your unpublished dataset
 #. Select the “Edit” button
-#. Select “Private URL” in the dropdown menu
-#. In the pop-up select “Create Private URL” or "Create URL for Anonymized Access". The latter supports anonymous review by removing author names and other potentially identifying information from citations, version history tables, and some metadata fields (as configured by the administrator).
-#. Copy the Private URL which has been created for this dataset and it can now be shared with anyone you wish to have access to view or download files in your unpublished dataset.
+#. Select “Preview URL” in the dropdown menu
+#. In the pop-up select “Create General Preview URL” or "Create Anonymous Preview URL". The latter supports anonymous review by removing author names and other potentially identifying information from citations, version history tables, and some metadata fields (as configured by the administrator).
+#. Copy the Preview URL which has been created for this dataset and it can now be shared with anyone you wish to have access to view or download files in your unpublished dataset.
 
-To disable a Private URL and to revoke access, follow the same steps as above until step #3 when you return to the popup, click the “Disable Private URL” button.
-Note that only one PrivateURL (normal or with anonymized access) can be configured per dataset at a time. 
+To disable a Preview URL and to revoke access, follow the same steps as above until step #3 when you return to the popup, click the “Disable Preview URL” button.
+
+**Note:** Before distributing an anonymized Preview URL it is recommended that you view the dataset as a potential user to verify that the metadata available does not reveal authorship, etc. 
+
+#. Create Anonymous Preview URL for your unpublished dataset via the Preview URL popup from Edit Dataset button
+#. Copy the Anonymous Preview URL to your clipboard
+#. Log out of Dataverse application 
+#. Open the dataset using the Anonymous Preview URL you plan to distribute to view it as a reviewer would.
+#. It may be necessary for you to further edit your draft dataset's metadata to remove identifying items before you distribute the Anonymous Preview URL
+
+Note that only one Preview URL (normal or with anonymized access) can be configured per dataset at a time. 
+
+.. _embargoes:
 
 Embargoes
 =========
 
-A Dataverse instance may be configured to support file-level embargoes. Embargoes make file content inaccessible after a dataset version is published  - until the embargo end date.
+A Dataverse instance may be configured to support file-level embargoes. Embargoes make file content inaccessible after a dataset version is published  - until the embargo end date. A reason for the embargo may be supplied when creating the embargo. A reason may be :ref:`required <dataverse.feature.require-embargo-reason>` in some Dataverse instances.
 This means that file previews and the ability to download files will be blocked. The effect is similar to when a file is restricted except that the embargo will end at the specified date without further action and during the embargo, requests for file access cannot be made. 
 Embargoes of files in a version 1.0 dataset may also affect the date shown in the dataset and file citations. The recommended practice is for the citation to reflect the date on which all embargoes on files in version 1.0 end. (Since Dataverse creates one persistent identifier per dataset and doesn't create new ones for each version, the publication of later versions, with or without embargoed files, does not affect the citation date.)
 
@@ -545,6 +764,18 @@ Once a dataset with embargoed files has been published, no further action is nee
 
 As the primary use case of embargoes is to make the existence of data known now, with a promise (to a journal, project team, etc.) that the data itself will become available at a given future date, users cannot change an embargo once a dataset version is published. Dataverse instance administrators do have the ability to correct mistakes and make changes if/when circumstances warrant.
 
+.. _retention-periods:
+
+Retention Periods
+=================
+
+Support for file-level retention periods can also be configured in a Dataverse instance. Retention periods make file content inaccessible after the retention period end date. This means that file previews and the ability to download files will be blocked. The effect is similar to when a file is restricted except that the retention periods will end at the specified date without further action and after the retention periods expires, requests for file access cannot be made.
+
+Retention periods are intended to support use cases where files must be made unavailable - and in most cases destroyed, e.g. to meet legal requirements - after a certain period or date.
+Actual destruction is not automatically handled, but would have to be done on the storage if needed.
+
+.. _dataset-versions:
+
 Dataset Versions
 ================
 
@@ -552,9 +783,9 @@ Versioning is important for long-term research data management where metadata an
 
 |image3|
 
-Once you edit your published dataset a new draft version of this dataset will be created. To publish this new version of your dataset, select the "Publish Dataset" button on the top right side of the page. If you were at version 1 of your dataset, depending on the types of changes you had made, you would be asked to publish your draft as either version 1.1 or version 2.0.
+Once you edit your published dataset, a draft version will be created. To publish this draft version, use the “Publish Dataset” button at the top right side of the page.
 
-**Important Note:** If you add a file, your dataset will automatically be bumped up to a major version (e.g., if you were at 1.0 you will go to 2.0).
+If files were added or removed, or if your dataset's previous version was deaccessioned, you must agree to publish the draft as a major version, such as version 2.0. Otherwise, you can choose to publish the draft as a major version or as a minor version, such as version 1.1.
 
 On the Versions tab of a dataset page, there is a versions table that displays the version history of the dataset. You can use the version number links in this table to navigate between the different versions of the dataset, including the unpublished draft version, if you have permission to access it.
 
@@ -593,7 +824,7 @@ The "Compute" button on dataset and file pages will allow you to compute on a si
 Cloud Storage Access
 --------------------
 
-If you need to access a dataset in a more flexible way than the Compute button provides, then you can use the Cloud Storage Access box on the dataset page to copy the dataset's container name. This unique identifer can then be used to allow direct access to the dataset.
+If you need to access a dataset in a more flexible way than the Compute button provides, then you can use the Cloud Storage Access box on the dataset page to copy the dataset's container name. This unique identifier can then be used to allow direct access to the dataset.
 
 .. _deaccession:
 
@@ -612,6 +843,128 @@ If you deaccession the most recently published version of the dataset but not al
 
 **Important Note**: A tombstone landing page with the basic citation metadata will always be accessible to the public if they use the persistent URL (Handle or DOI) provided in the citation for that dataset.  Users will not be able to see any of the files or additional metadata that were previously available prior to deaccession.
 
+.. _dataset-types:
+
+Dataset Types
+=============
+
+.. note:: Development of the dataset types feature is ongoing. Please see https://github.com/IQSS/dataverse-pm/issues/307 for details.
+
+The vision for dataset types is to have variations on datasets. The best documented use case is :ref:`review-datasets-user`, as explained below, but other types of datasets are possible such as software datasets (see :ref:`api-add-dataset-type` for an example) or workflow datasets.
+
+Out of the box, all datasets have a dataset type of "dataset", which is the traditional research data related dataset in Dataverse. Superusers can add additional types using the :ref:`api-add-dataset-type` API endpoint. These additional dataset types cannot be used until a superuser has allowed them on a per-collection basis using the :ref:`collection-attributes-api` API endpoint (by passing ``allowedDatasetTypes``).
+
+Dataset types can be listed, added, or deleted via API. See :ref:`api-dataset-types` in the API Guide for more.
+
+Currently, specifying a type for a dataset can only be done via API and only when the dataset is created. (The type can't be changed afterward.) For details, see the following sections of the API guide:
+
+- :ref:`api-create-dataset-with-type` (Native API)
+- :ref:`api-semantic-create-dataset-with-type` (Semantic API)
+- :ref:`import-dataset-with-type`
+
+Once more than one type appears in dataset search results, a facet called "Dataset Type" will appear allowing you to filter down to a certain type.
+
+Dataset types can be linked with metadata blocks to make fields from those blocks available when datasets of that type are created or edited (via API). See :ref:`api-link-dataset-type` and :ref:`list-metadata-blocks-for-a-collection` for details.
+
+Dataset types can change the "type" in Citation Style Language (CSL) output. See :ref:`get-citation-in-other-formats` for details.
+
+If your installation is configured to use DataCite as a persistent ID (PID) provider, the dataset type may be sent to DataCite as ``resourceTypeGeneral`` (see also `upstream schema <https://datacite-metadata-schema.readthedocs.io/en/latest/properties/resourcetype/>`_). See the table under :ref:`dataset-types-datacite` for details.
+
+.. _review-datasets-user:
+
+Review Datasets
+---------------
+
+.. note:: This is an experimental feature.
+
+.. _review-datasets-overview:
+
+Review Dataset Overview
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Review datasets are a specialized type of dataset that can be used to review resources (such as datasets) in the Dataverse installation itself or resources in external data repositories.
+
+This feature is only available via API and only if it has been configured by a superuser for your collection. See :ref:`review-datasets-setup` for details.
+
+In the recommended setup, a collection is created that is managed by a research community, typically approved at the installation level.
+
+In a typical use case, the reviews will be generated by these research communities based on the aggregation of scores for a particular domain by community-identified experts. These scores are stored in a custom metadata block, a rubric. An additional metadata block is required to hold information about the review itself, such a pointer to the resource being reviewed.
+
+We recommend implementing a policy where there is only one review of a given resource per collection.
+
+Almost all functionality is the same between regular datasets and review datasets. Review datasets build upon existing dataset functionality such as custom metadata blocks, versioning, publishing workflows, permissions, and file handling.
+
+Review datasets build on the :ref:`dataset-types` feature, allowing users to choose a dataset type of "review", which leads to a couple differences from regular datasets.
+
+First, when multiple dataset types exist, a "Dataset Type" search facet appears that allows users to narrow results to the various kinds of dataset types that have been added, such as dataset, review, software, workflow, etc. (Under the "Collections, Datasets, Files" area, review datasets are considered datasets.)
+
+Second, when review datasets are published, different ``resourceType`` metadata is sent to DataCite. Review datasets send "Other" for the field ``resourceTypeGeneral`` ("Work Type" in the UI at https://commons.datacite.org) and "Review" as the ``resourceType`` value. See the table under :ref:`dataset-types-datacite` for details and comparison. Please note that we are not using the "PeerReview" for ``resourceTypeGeneral`` because it is (in our view) specific to scholarly communications and may carry related connotations.
+
+The following table summaries how regular datasets compare to review datasets.
+
+.. list-table:: Differences between regular and review datasets
+   :header-rows: 1
+   :stub-columns: 1
+   :align: left
+
+   * -
+     - Regular Dataset
+     - Review Dataset
+   * - Collections/Datasets/Files search facet
+     - dataset
+     - dataset
+   * - Dataset Type search facet
+     - dataset
+     - review
+   * - DataCite
+     - See table under :ref:`api-add-dataset-type`
+     - See table under :ref:`api-add-dataset-type`
+
+.. _creating-a-review-dataset:
+
+Creating a Review Dataset
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can only create a review dataset if setup has already been done by a superuser. See :ref:`review-datasets-setup` for details.
+
+Review Datasets can only be created via API. You have the following options:
+
+- :ref:`api-create-dataset-with-type` (Native API)
+
+  - Here is an example JSON file for reference: :download:`dataset-create-review.json <../_static/api/dataset-create-review.json>`.
+
+- :ref:`api-semantic-create-dataset-with-type` (Semantic API)
+- :ref:`import-dataset-with-type`
+
+When creating a review dataset you will likely need to fill in required fields like ``itemReviewedUrl`` as well as fields from one or more "rubric" metadata blocks, as described above under :ref:`review-datasets-overview`.
+
+If you point ``itemReviewedUrl`` at the URL form of a dataset (e.g. https://doi.org/10.5072/FK2/ABCDEF) that is in the same Dataverse installation as the review dataset, the review dataset is considered a local review and can be listed using the :ref:`api-list-reviews` API endpoint. These reviews appear in the Croissant metadata export if you enable the :ref:`dataverse.feature.croissant-with-local-reviews` feature flag.
+
+.. _dataset-types-datacite:
+
+Dataset Types and DataCite
+--------------------------
+
+Adding certain dataset types will result in a value other than "Dataset" being sent to DataCite (if you use DataCite) as shown in the table below.
+
+.. list-table:: Values sent to DataCite for resourceTypeGeneral by Dataset Type
+   :header-rows: 1
+   :stub-columns: 1
+   :align: left
+
+   * - Dataset Type
+     - Value sent to DataCite
+   * - dataset
+     - <resourceType resourceTypeGeneral="Dataset"/>
+   * - software
+     - <resourceType resourceTypeGeneral="Software"/>
+   * - workflow
+     - <resourceType resourceTypeGeneral="Workflow"/>
+   * - review
+     - <resourceType resourceTypeGeneral="Other">Review</resourceType>
+
+Note that the value for resourceType (which is either empty or "Review", as shown above) can be overridden by values in the "Data Type" (``kindOfData``) metadata field.
+
 .. |image1| image:: ./img/DatasetDiagram.png
    :class: img-responsive
 .. |image3| image:: ./img/data_publishing_version_workflow.png
@@ -621,6 +974,22 @@ If you deaccession the most recently published version of the dataset but not al
 .. |file-upload-prov-window| image:: ./img/prov1.png
    :class: img-responsive
 .. |image-file-tree-view| image:: ./img/file-tree-view.png
+   :class: img-responsive
+.. |cw-image1| image:: ./img/computational-workflow-diagram.png
+   :class: img-responsive
+.. |cw-image2| image:: ./img/computational-workflow-metadata.png
+   :class: img-responsive
+.. |cw-image3| image:: ./img/file-tags-link.png
+   :class: img-responsive
+.. |cw-image4| image:: ./img/file-tags-options.png
+   :class: img-responsive
+.. |cw-image5| image:: ./img/computational-workflow-facets.png
+   :class: img-responsive
+.. |cw-image6| image:: ./img/file-tags-facets.png
+   :class: img-responsive
+.. |bagit-image1| image:: ./img/bagit-handler-errors.png
+   :class: img-responsive
+.. |h5web| image:: ./img/h5web.png
    :class: img-responsive
    
 .. _Make Data Count: https://makedatacount.org

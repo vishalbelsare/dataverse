@@ -16,7 +16,7 @@ See the :doc:`/api/intro` section of the API Guide for a high level overview of 
 A Dataset Is Locked And Cannot Be Edited or Published
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are several types of dataset locks. Locks can be managed using the locks API, or by accessing them directly in the database. Internally locks are maintained in the ``DatasetLock`` database table, with the ``field dataset_id`` linking them to specific datasets, and the column ``reason`` specifying the type of lock.
+There are several types of dataset locks. Locks can be managed using the locks API, or by accessing them directly in the database. Internally locks are maintained in the ``datasetlock`` database table, with the field ``dataset_id`` linking them to specific datasets, and the column ``reason`` specifying the type of lock.
 
 It's normal for the ingest process described in the :doc:`/user/tabulardataingest/ingestprocess` section of the User Guide to take some time but if hours or days have passed and the dataset is still locked, you might want to inspect the locks and consider deleting some or all of them. It is recommended to restart the application server if you are deleting an ingest lock, to make sure the ingest job is no longer running in the background. Ingest locks are idetified by the label ``Ingest`` in the ``reason`` column of the ``DatasetLock`` table in the database.
 
@@ -53,15 +53,13 @@ Long-Running Ingest Jobs Have Exhausted System Resources
 
 Ingest is both CPU- and memory-intensive, and depending on your system resources and the size and format of tabular data files uploaded, may render your Dataverse installation unresponsive or nearly inoperable. It is possible to cancel these jobs by purging the ingest queue.
 
-``/usr/local/payara5/mq/bin/imqcmd -u admin query dst -t q -n DataverseIngest`` will query the DataverseIngest destination. The password, unless you have changed it, matches the username.
+``/usr/local/payara7/mq/bin/imqcmd -u admin query dst -t q -n DataverseIngest`` will query the DataverseIngest destination. The password, unless you have changed it, matches the username.
 
-``/usr/local/payara5/mq/bin/imqcmd -u admin purge dst -t q -n DataverseIngest`` will purge the DataverseIngest queue, and prompt for your confirmation.
+``/usr/local/payara7/mq/bin/imqcmd -u admin purge dst -t q -n DataverseIngest`` will purge the DataverseIngest queue, and prompt for your confirmation.
 
-Finally, list destinations to verify that the purge was successful::
+Finally, list destinations to verify that the purge was successful:
 
-``/usr/local/payara5/mq/bin/imqcmd -u admin list dst``
-
-If you are still running Glassfish, substitute glassfish4 for payara5 above. If you have installed your Dataverse installation in some other location, adjust the above paths accordingly.
+``/usr/local/payara7/mq/bin/imqcmd -u admin list dst``
 
 .. _troubleshooting-payara:
 
@@ -73,7 +71,7 @@ Payara
 Finding the Payara Log File
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``/usr/local/payara5/glassfish/domains/domain1/logs/server.log`` is the main place to look when you encounter problems (assuming you installed Payara in the default directory). Hopefully an error message has been logged. If there's a stack trace, it may be of interest to developers, especially they can trace line numbers back to a tagged version or commit. Send more of the stack trace (the entire file if possible) to developers who can help (see "Getting Help", below) and be sure to say which version of the Dataverse Software you have installed.
+``/usr/local/payara7/glassfish/domains/domain1/logs/server.log`` is the main place to look when you encounter problems (assuming you installed Payara in the default directory). Hopefully an error message has been logged. If there's a stack trace, it may be of interest to developers, especially they can trace line numbers back to a tagged version or commit. Send more of the stack trace (the entire file if possible) to developers who can help (see "Getting Help", below) and be sure to say which version of the Dataverse Software you have installed.
 
 .. _increase-payara-logging:
 
@@ -96,10 +94,8 @@ Sometimes your Dataverse installation fails to deploy, or Payara fails to restar
 
 We don't know what's causing this issue, but here's a known workaround: 
 
-- Stop Payara; 
-
-- Remove the ``generated`` and ``osgi-cache`` directories;
-
+- Stop Payara;
+- Remove the ``generated`` and ``osgi-cache`` directories from the ``domain1`` directory;
 - Start Payara
 
 The shell script below performs the steps above. 
@@ -146,7 +142,7 @@ To identify the specific invalid values in the affected datasets, or to check al
 Many Files with a File Type of "Unknown", "Application", or "Binary"
 --------------------------------------------------------------------
 
-From the home page of a Dataverse installation you can get a count of files by file type by clicking "Files" and then scrolling down to "File Type". If you see a lot of files that are "Unknown", "Application", or "Binary" you can have the Dataverse  installation attempt to redetect the file type by using the :ref:`Redetect File Type <redetect-file-type>` API endpoint.
+From the home page of a Dataverse installation you can get a count of files by file type by clicking "Files" and then scrolling down to "File Type". If you see a lot of files that are "Unknown", "Application", or "Binary" you can have the Dataverse installation attempt to redetect the file type by using the :ref:`Redetect File Type <redetect-file-type>` API endpoint.
 
 .. _actionlogrecord-trimming:
 
@@ -166,7 +162,9 @@ A full backup of the table can be made with pg_dump, for example:
 
 ``pg_dump <CREDENTIALS> --table=actionlogrecord --data-only <DATABASE_NAME> > /tmp/actionlogrecord_backup.sql``
 
-(In the example above, the output will be saved in raw SQL format. It is portable and human-readable, but uses a lot of space. It does, however, compress very well. Add the ``-Fc`` option to save the output in a proprietary, binary format that's already compressed). 
+In the example above, the output will be saved in raw SQL format. It is portable and human-readable, but uses a lot of space. It does, however, compress very well.
+
+Add the ``-Fc`` option to save the output in a proprietary, compressed binary format which will dump and restore much more quickly, but note that in this format dead tuples will be copied as well. To reduce the amount of storage consumed by the newly-trimmed ``actionlogrecord`` table, you must issue ``vacuum full actionlogrecord`` before dumping the database in this custom format.
 
 
 Getting Help

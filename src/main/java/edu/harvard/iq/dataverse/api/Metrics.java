@@ -12,22 +12,25 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
 
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Request;
-import javax.ws.rs.core.Response;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Request;
+import jakarta.ws.rs.core.Response;
 
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import javax.ws.rs.core.UriInfo;
-import javax.ws.rs.core.Variant;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import jakarta.ws.rs.core.UriInfo;
+import jakarta.ws.rs.core.Variant;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 /**
  * API endpoints for various metrics.
@@ -40,6 +43,7 @@ import javax.ws.rs.core.Variant;
  * @author pdurbin, madunlap
  */
 @Path("info/metrics")
+@Tag(name = "Info", description = "General information about the Dataverse installation.")
 public class Metrics extends AbstractApiBean {
     private static final Logger logger = Logger.getLogger(Metrics.class.getName());
 
@@ -47,14 +51,22 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("dataverses")
-    public Response getDataversesAllTime(@Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates total dataverse count",
+            description = "Calculates the number of released dataverses through the current month, optionally scoped to a released parent dataverse.")
+    public Response getDataversesAllTime(@Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getDataversesToMonth(uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
 
     @GET
     @Path("dataverses/monthly")
     @Produces("text/csv, application/json")
-    public Response getDataversesTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly dataverse counts",
+            description = "Calculates a monthly time series of released dataverse counts as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getDataversesTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -79,7 +91,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("dataverses/toMonth/{yyyymm}")
-    public Response getDataversesToMonth(@Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataverse count through a month",
+            description = "Calculates the number of released dataverses through the specified month, optionally scoped to a released parent dataverse.")
+    public Response getDataversesToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -105,7 +123,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("dataverses/pastDays/{days}")
-    public Response getDataversesPastDays(@Context UriInfo uriInfo, @PathParam("days") int days, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates recent dataverse count",
+            description = "Calculates the number of released dataverses created during the specified number of past days, optionally scoped to a released parent dataverse.")
+    public Response getDataversesPastDays(@Context UriInfo uriInfo,
+            @Parameter(description = "Positive number of past days included in the metric.", required = true)
+            @PathParam("days") int days,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -134,7 +158,11 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("dataverses/byCategory")
     @Produces("text/csv, application/json")
-    public Response getDataversesByCategory(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataverse counts by category",
+            description = "Calculates released dataverse counts grouped by dataverse category as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getDataversesByCategory(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -161,7 +189,11 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("dataverses/bySubject")
     @Produces("text/csv, application/json")
-    public Response getDataversesBySubject(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataverse counts by subject",
+            description = "Calculates released dataverse counts grouped by subject as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getDataversesBySubject(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -190,14 +222,26 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("datasets")
-    public Response getDatasetsAllTime(@Context UriInfo uriInfo, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates total dataset count",
+            description = "Calculates the number of released datasets through the current month, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsAllTime(@Context UriInfo uriInfo,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getDatasetsToMonth(uriInfo, MetricsUtil.getCurrentMonth(), dataLocation, parentAlias);
     }
 
     @GET
     @Path("datasets/monthly")
     @Produces("text/csv, application/json")
-    public Response getDatasetsTimeSeriest(@Context Request req, @Context UriInfo uriInfo, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly dataset counts",
+            description = "Calculates a monthly time series of released dataset counts as JSON or CSV, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsTimeSeriest(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
 
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
@@ -206,12 +250,13 @@ public class Metrics extends AbstractApiBean {
             return error(BAD_REQUEST, ia.getLocalizedMessage());
         }
         String metricName = "datasets";
-        JsonArray jsonArray = MetricsUtil.stringToJsonArray(metricsSvc.returnUnexpiredCacheAllTime(metricName, null, d));
+        String validDataLocation = MetricsUtil.validateDataLocationStringType(dataLocation);
+        JsonArray jsonArray = MetricsUtil.stringToJsonArray(metricsSvc.returnUnexpiredCacheAllTime(metricName, validDataLocation, d));
 
         if (null == jsonArray) { // run query and save
 
-            jsonArray = metricsSvc.getDatasetsTimeSeries(uriInfo, dataLocation, d);
-            metricsSvc.save(new Metric(metricName, null, null, d, jsonArray.toString()));
+            jsonArray = metricsSvc.getDatasetsTimeSeries(uriInfo, validDataLocation, d);
+            metricsSvc.save(new Metric(metricName, null, validDataLocation, d, jsonArray.toString()));
         }
         MediaType requestedType = getVariant(req, MediaType.valueOf(FileUtil.MIME_TYPE_CSV), MediaType.APPLICATION_JSON_TYPE);
         if ((requestedType != null) && (requestedType.equals(MediaType.APPLICATION_JSON_TYPE))) {
@@ -222,7 +267,15 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("datasets/toMonth/{yyyymm}")
-    public Response getDatasetsToMonth(@Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataset count through a month",
+            description = "Calculates the number of released datasets through the specified month, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -249,7 +302,15 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("datasets/pastDays/{days}")
-    public Response getDatasetsPastDays(@Context UriInfo uriInfo, @PathParam("days") int days, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates recent dataset count",
+            description = "Calculates the number of released datasets created during the specified number of past days, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsPastDays(@Context UriInfo uriInfo,
+            @Parameter(description = "Positive number of past days included in the metric.", required = true)
+            @PathParam("days") int days,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -279,14 +340,28 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("datasets/bySubject")
     @Produces("text/csv, application/json")
-    public Response getDatasetsBySubject(@Context Request req, @Context UriInfo uriInfo, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataset counts by subject",
+            description = "Calculates released dataset counts grouped by subject through the current month as JSON or CSV, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsBySubject(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getDatasetsBySubjectToMonth(req, uriInfo, MetricsUtil.getCurrentMonth(), dataLocation, parentAlias);
     }
 
     @GET
     @Path("datasets/bySubject/toMonth/{yyyymm}")
     @Produces("text/csv, application/json")
-    public Response getDatasetsBySubjectToMonth(@Context Request req, @Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("dataLocation") String dataLocation, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates dataset counts by subject through a month",
+            description = "Calculates released dataset counts grouped by subject through the specified month as JSON or CSV, optionally filtered by storage location and parent dataverse.")
+    public Response getDatasetsBySubjectToMonth(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Storage location filter for the dataset metric.")
+            @QueryParam("dataLocation") String dataLocation,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -315,14 +390,22 @@ public class Metrics extends AbstractApiBean {
     /** Files */
     @GET
     @Path("files")
-    public Response getFilesAllTime(@Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates total file count",
+            description = "Calculates the number of released files through the current month, optionally scoped to a released parent dataverse.")
+    public Response getFilesAllTime(@Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getFilesToMonth(uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
 
     @GET
     @Path("files/monthly")
     @Produces("text/csv, application/json")
-    public Response getFilesTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly file counts",
+            description = "Calculates a monthly time series of released file counts as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFilesTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -347,7 +430,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("files/toMonth/{yyyymm}")
-    public Response getFilesToMonth(@Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates file count through a month",
+            description = "Calculates the number of released files through the specified month, optionally scoped to a released parent dataverse.")
+    public Response getFilesToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -375,7 +464,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("files/pastDays/{days}")
-    public Response getFilesPastDays(@Context UriInfo uriInfo, @PathParam("days") int days, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates recent file count",
+            description = "Calculates the number of released files created during the specified number of past days, optionally scoped to a released parent dataverse.")
+    public Response getFilesPastDays(@Context UriInfo uriInfo,
+            @Parameter(description = "Positive number of past days included in the metric.", required = true)
+            @PathParam("days") int days,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -405,14 +500,18 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("/files/byType/monthly")
     @Produces("text/csv, application/json")
-    public Response getFilesByTypeTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly file counts by type",
+            description = "Calculates a monthly time series of released file counts and sizes grouped by content type as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFilesByTypeTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
         } catch (IllegalArgumentException ia) {
             return error(BAD_REQUEST, ia.getLocalizedMessage());
         }
-        String metricName = "filesByType";
+        String metricName = "filesByTypeMonthly";
 
         JsonArray jsonArray = MetricsUtil.stringToJsonArray(metricsSvc.returnUnexpiredCacheAllTime(metricName, null, d));
 
@@ -431,7 +530,11 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("/files/byType")
     @Produces("text/csv, application/json")
-    public Response getFilesByType(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates file counts by type",
+            description = "Calculates released file counts and sizes grouped by content type as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFilesByType(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -459,14 +562,22 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("downloads")
-    public Response getDownloadsAllTime(@Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates total download count",
+            description = "Calculates the number of file downloads through the current month, optionally scoped to a released parent dataverse.")
+    public Response getDownloadsAllTime(@Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getDownloadsToMonth(uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
 
     @GET
     @Path("downloads/monthly")
     @Produces("text/csv, application/json")
-    public Response getDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly download counts",
+            description = "Calculates a monthly time series of file download counts as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -492,7 +603,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("downloads/toMonth/{yyyymm}")
-    public Response getDownloadsToMonth(@Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates download count through a month",
+            description = "Calculates the number of file downloads through the specified month, optionally scoped to a released parent dataverse.")
+    public Response getDownloadsToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -522,7 +639,13 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("downloads/pastDays/{days}")
-    public Response getDownloadsPastDays(@Context UriInfo uriInfo, @PathParam("days") int days, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates recent download count",
+            description = "Calculates the number of file downloads during the specified number of past days, optionally scoped to a released parent dataverse.")
+    public Response getDownloadsPastDays(@Context UriInfo uriInfo,
+            @Parameter(description = "Positive number of past days included in the metric.", required = true)
+            @PathParam("days") int days,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -547,16 +670,136 @@ public class Metrics extends AbstractApiBean {
         return ok(jsonObj);
     }
 
+    /** Accounts */
+
+    @GET
+    @Path("accounts")
+    @Operation(summary = "Calculates total account count",
+            description = "Calculates the number of user accounts through the current month.")
+    public Response getAccountsAllTime(@Context UriInfo uriInfo) {
+        return getAccountsToMonth(uriInfo, MetricsUtil.getCurrentMonth());
+    }
+
+    @GET
+    @Path("accounts/toMonth/{yyyymm}")
+    @Operation(summary = "Calculates account count through a month",
+            description = "Calculates the number of user accounts through the specified month.")
+    public Response getAccountsToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm) {
+
+        try {
+            errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { });
+        } catch (IllegalArgumentException ia) {
+            return error(BAD_REQUEST, ia.getLocalizedMessage());
+        }
+
+        String metricName = "accountsToMonth";
+        String sanitizedyyyymm = MetricsUtil.sanitizeYearMonthUserInput(yyyymm);
+        JsonObject jsonObj = MetricsUtil.stringToJsonObject(metricsSvc.returnUnexpiredCacheMonthly(metricName, sanitizedyyyymm, null, null));
+
+        if (null == jsonObj) { // run query and save
+            Long count;
+            try {
+                count = metricsSvc.accountsToMonth(sanitizedyyyymm);
+            } catch (ParseException e) {
+                return error(BAD_REQUEST, "Unable to parse supplied date: " + e.getLocalizedMessage());
+            }
+            jsonObj = MetricsUtil.countToJson(count).build();
+            metricsSvc.save(new Metric(metricName, sanitizedyyyymm, null, null, jsonObj.toString()));
+        }
+
+        return ok(jsonObj);
+    }
+
+    @GET
+    @Path("accounts/pastDays/{days}")
+    @Operation(summary = "Calculates recent account count",
+            description = "Calculates the number of user accounts created during the specified number of past days.")
+    public Response getAccountsPastDays(@Context UriInfo uriInfo,
+            @Parameter(description = "Positive number of past days included in the metric.", required = true)
+            @PathParam("days") int days) {
+
+        try {
+            errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { });
+        } catch (IllegalArgumentException ia) {
+            return error(BAD_REQUEST, ia.getLocalizedMessage());
+        }
+
+        String metricName = "accountsPastDays";
+
+        if (days < 1) {
+            return error(BAD_REQUEST, "Invalid parameter for number of days.");
+        }
+
+        JsonObject jsonObj = MetricsUtil.stringToJsonObject(metricsSvc.returnUnexpiredCacheDayBased(metricName, String.valueOf(days), null, null));
+
+        if (null == jsonObj) { // run query and save
+            Long count = metricsSvc.accountsPastDays(days);
+            jsonObj = MetricsUtil.countToJson(count).build();
+            metricsSvc.save(new Metric(metricName, String.valueOf(days), null, null, jsonObj.toString()));
+        }
+
+        return ok(jsonObj);
+    }
+
+    @GET
+    @Path("accounts/monthly")
+    @Produces("text/csv, application/json")
+    @Operation(summary = "Calculates monthly account counts",
+            description = "Calculates a monthly time series of user account counts as JSON or CSV.")
+    public Response getAccountsTimeSeries(@Context Request req, @Context UriInfo uriInfo) {
+
+        try {
+            errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { });
+        } catch (IllegalArgumentException ia) {
+            return error(BAD_REQUEST, ia.getLocalizedMessage());
+        }
+
+        String metricName = "accounts";
+        JsonArray jsonArray = MetricsUtil.stringToJsonArray(metricsSvc.returnUnexpiredCacheAllTime(metricName, null, null));
+
+        if (null == jsonArray) { // run query and save
+            // Only handling published right now
+            jsonArray = metricsSvc.accountsTimeSeries();
+            metricsSvc.save(new Metric(metricName, null, null, null, jsonArray.toString()));
+        }
+
+        MediaType requestedType = getVariant(req, MediaType.valueOf(FileUtil.MIME_TYPE_CSV), MediaType.APPLICATION_JSON_TYPE);
+        if ((requestedType != null) && (requestedType.equals(MediaType.APPLICATION_JSON_TYPE))) {
+            return ok(jsonArray);
+        }
+        return ok(FileUtil.jsonArrayOfObjectsToCSV(jsonArray, MetricsUtil.DATE, MetricsUtil.COUNT), MediaType.valueOf(FileUtil.MIME_TYPE_CSV), "accounts.timeseries.csv");
+    }
+
+    /** MakeDataCount */
+
     @GET
     @Path("makeDataCount/{metric}")
-    public Response getMakeDataCountMetricCurrentMonth(@Context UriInfo uriInfo, @PathParam("metric") String metricSupplied, @QueryParam("country") String country, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates a Make Data Count metric",
+            description = "Calculates the requested Make Data Count metric through the current month, optionally filtered by country and parent dataverse.")
+    public Response getMakeDataCountMetricCurrentMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Make Data Count metric name to return.", required = true)
+            @PathParam("metric") String metricSupplied,
+            @Parameter(description = "ISO country code used to filter the metric.")
+            @QueryParam("country") String country,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getMakeDataCountMetricToMonth(uriInfo, metricSupplied, MetricsUtil.getCurrentMonth(), country, parentAlias);
     }
 
     @GET
     @Path("makeDataCount/{metric}/monthly")
     @Produces("text/csv, application/json")
-    public Response getMakeDataCountMetricTimeSeries(@Context Request req, @Context UriInfo uriInfo, @PathParam("metric") String metricSupplied, @QueryParam("country") String country, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly Make Data Count metrics",
+            description = "Calculates a monthly time series for the requested Make Data Count metric as JSON or CSV, optionally filtered by country and parent dataverse.")
+    public Response getMakeDataCountMetricTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Make Data Count metric name to return.", required = true)
+            @PathParam("metric") String metricSupplied,
+            @Parameter(description = "ISO country code used to filter the metric.")
+            @QueryParam("country") String country,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         MakeDataCountUtil.MetricType metricType = null;
         try {
@@ -568,6 +811,13 @@ public class Metrics extends AbstractApiBean {
             metricType = MakeDataCountUtil.MetricType.fromString(metricSupplied);
         } catch (IllegalArgumentException ex) {
             return error(Response.Status.BAD_REQUEST, ex.getMessage());
+        }
+        if (country != null) {
+            country = country.toLowerCase();
+
+            if (!MakeDataCountUtil.isValidCountryCode(country)) {
+                return error(Response.Status.BAD_REQUEST, "Country must be one of the ISO 1366 Country Codes");
+            }
         }
         String metricName = "MDC-" + metricType.toString() + ((country == null) ? "" : "-" + country);
 
@@ -587,7 +837,17 @@ public class Metrics extends AbstractApiBean {
 
     @GET
     @Path("makeDataCount/{metric}/toMonth/{yyyymm}")
-    public Response getMakeDataCountMetricToMonth(@Context UriInfo uriInfo, @PathParam("metric") String metricSupplied, @PathParam("yyyymm") String yyyymm, @QueryParam("country") String country, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates a Make Data Count metric through a month",
+            description = "Calculates the requested Make Data Count metric through the specified month, optionally filtered by country and parent dataverse.")
+    public Response getMakeDataCountMetricToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Make Data Count metric name to return.", required = true)
+            @PathParam("metric") String metricSupplied,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "ISO country code used to filter the metric.")
+            @QueryParam("country") String country,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         MakeDataCountUtil.MetricType metricType = null;
         try {
@@ -627,14 +887,24 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("filedownloads")
     @Produces("text/csv, application/json")
-    public Response getFileDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates file download counts",
+            description = "Calculates file download counts by file through the current month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFileDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getFileDownloadsToMonth(req, uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
     
     @GET
     @Path("filedownloads/toMonth/{yyyymm}")
     @Produces("text/csv, application/json")
-    public Response getFileDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates file download counts through a month",
+            description = "Calculates file download counts by file through the specified month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFileDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -662,7 +932,11 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("filedownloads/monthly")
     @Produces("text/csv, application/json")
-    public Response getFileDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly file download counts",
+            description = "Calculates a monthly time series of file download counts by file as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getFileDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -688,14 +962,22 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("uniquedownloads")
     @Produces("text/csv, application/json")
-    public Response getUniqueDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates unique dataset download counts",
+            description = "Calculates unique dataset download counts through the current month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getUniqueDownloadsToMonth(req, uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
 
     @GET
     @Path("uniquedownloads/monthly")
     @Produces("text/csv, application/json")
-    public Response getUniqueDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly unique dataset download counts",
+            description = "Calculates a monthly time series of unique dataset download counts as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -721,7 +1003,13 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("uniquedownloads/toMonth/{yyyymm}")
     @Produces("text/csv, application/json")
-    public Response getUniqueDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates unique dataset download counts through a month",
+            description = "Calculates unique dataset download counts through the specified month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -749,14 +1037,24 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("uniquefiledownloads")
     @Produces("text/csv, application/json")
-    public Response getUniqueFileDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates unique file download counts",
+            description = "Calculates unique file download counts by file through the current month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueFileDownloadsAllTime(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getUniqueFileDownloadsToMonth(req, uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
     
     @GET
     @Path("uniquefiledownloads/toMonth/{yyyymm}")
     @Produces("text/csv, application/json")
-    public Response getUniqueFileDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates unique file download counts through a month",
+            description = "Calculates unique file download counts by file through the specified month as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueFileDownloadsToMonth(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 
         try {
@@ -784,7 +1082,11 @@ public class Metrics extends AbstractApiBean {
     @GET
     @Path("uniquefiledownloads/monthly")
     @Produces("text/csv, application/json")
-    public Response getUniqueFileDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates monthly unique file download counts",
+            description = "Calculates a monthly time series of unique file download counts by file as JSON or CSV, optionally scoped to a released parent dataverse.")
+    public Response getUniqueFileDownloadsTimeSeries(@Context Request req, @Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
         try {
             errorIfUnrecongizedQueryParamPassed(uriInfo, new String[] { "parentAlias" });
@@ -809,13 +1111,23 @@ public class Metrics extends AbstractApiBean {
     
     @GET
     @Path("tree")
-    public Response getDataversesTree(@Context UriInfo uriInfo, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates the dataverse tree metric",
+            description = "Calculates the released dataverse tree metric through the current month, optionally scoped to a released parent dataverse.")
+    public Response getDataversesTree(@Context UriInfo uriInfo,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
         return getDataversesTreeToMonth(uriInfo, MetricsUtil.getCurrentMonth(), parentAlias);
     }
 
     @GET
     @Path("tree/toMonth/{yyyymm}")
-    public Response getDataversesTreeToMonth(@Context UriInfo uriInfo, @PathParam("yyyymm") String yyyymm, @QueryParam("parentAlias") String parentAlias) {
+    @Operation(summary = "Calculates the dataverse tree metric through a month",
+            description = "Calculates the released dataverse tree metric through the specified month, optionally scoped to a released parent dataverse.")
+    public Response getDataversesTreeToMonth(@Context UriInfo uriInfo,
+            @Parameter(description = "Year and month cutoff for the metric, formatted as YYYYMM.", required = true)
+            @PathParam("yyyymm") String yyyymm,
+            @Parameter(description = "Alias of a released parent dataverse used to scope the metric.")
+            @QueryParam("parentAlias") String parentAlias) {
 
         Dataverse d = findDataverseOrDieIfNotFound(parentAlias);
 

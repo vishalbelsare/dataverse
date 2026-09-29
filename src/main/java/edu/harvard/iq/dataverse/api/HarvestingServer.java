@@ -5,33 +5,38 @@
  */
 package edu.harvard.iq.dataverse.api;
 
+import edu.harvard.iq.dataverse.api.auth.AuthRequired;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.harvest.server.OAISet;
 import edu.harvard.iq.dataverse.harvest.server.OAISetServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.json.JsonParseException;
-import javax.json.JsonObjectBuilder;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.JsonObjectBuilder;
 import static edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder.jsonObjectBuilder;
 import java.io.IOException;
-import java.io.StringReader;
 import java.util.List;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.json.Json;
-import javax.json.JsonReader;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Response;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Response;
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 /**
  *
@@ -39,6 +44,7 @@ import org.apache.commons.lang3.StringUtils;
  */
 @Stateless
 @Path("harvest/server/oaisets")
+@Tag(name = "Admin", description = "Administrative Dataverse operations.")
 public class HarvestingServer extends AbstractApiBean {
     @EJB
     OAISetServiceBean oaiSetService;
@@ -50,7 +56,11 @@ public class HarvestingServer extends AbstractApiBean {
     // Create, Modify, and Delete we should also add them here.
     
     @GET
-    public Response oaiSets(@QueryParam("key") String apiKey) throws IOException {
+    @Operation(summary = "Lists OAI sets",
+            description = "Returns all configured OAI sets with name, spec, description, definition, and version.")
+    public Response oaiSets(
+            @Parameter(description = "Legacy key value accepted by the endpoint.")
+            @QueryParam("key") String apiKey) throws IOException {
     
         List<OAISet> oaiSets = null;
         try {
@@ -64,7 +74,7 @@ public class HarvestingServer extends AbstractApiBean {
             return ok(jsonObjectBuilder().add("oaisets", ""));
         }
 
-        JsonArrayBuilder hcArr = Json.createArrayBuilder();
+        JsonArrayBuilder hcArr = JsonUtil.createArrayBuilder();
 
         for (OAISet set : oaiSets) {
             hcArr.add(oaiSetAsJson(set));
@@ -75,7 +85,13 @@ public class HarvestingServer extends AbstractApiBean {
     
     @GET
     @Path("{specname}")
-    public Response oaiSet(@PathParam("specname") String spec, @QueryParam("key") String apiKey) throws IOException {
+    @Operation(summary = "Returns an OAI set",
+            description = "Returns the OAI set with the specified set specification name.")
+    public Response oaiSet(
+            @Parameter(description = "OAI set specification name to return.", required = true)
+            @PathParam("specname") String spec,
+            @Parameter(description = "Legacy key value accepted by the endpoint.")
+            @QueryParam("key") String apiKey) throws IOException {
         
         OAISet set = null;  
         try {
@@ -104,14 +120,21 @@ public class HarvestingServer extends AbstractApiBean {
      * "description":$optional_set_description,"definition":$set_search_query_string}.
      */
     @POST
+    @AuthRequired
     @Path("/add")
-    public Response createOaiSet(String jsonBody, @QueryParam("key") String apiKey) throws IOException, JsonParseException {
+    @Operation(summary = "Creates an OAI set",
+            description = "Creates an OAI set from name, definition, and optional description JSON when the authenticated user is a superuser.")
+    public Response createOaiSet(@Context ContainerRequestContext crc,
+            @RequestBody(description = "OAI set JSON containing name, definition, and optional description.")
+            String jsonBody,
+            @Parameter(hidden = true)
+            @QueryParam("key") String apiKey) throws IOException, JsonParseException {
         /*
 	     * authorization modeled after the UI (aka HarvestingSetsPage)
          */
         AuthenticatedUser dvUser;
         try {
-            dvUser = findAuthenticatedUserOrDie();
+            dvUser = getRequestAuthenticatedUserOrDie(crc);
         } catch (WrappedResponse wr) {
             return wr.getResponse();
         }
@@ -119,13 +142,9 @@ public class HarvestingServer extends AbstractApiBean {
             return badRequest(BundleUtil.getStringFromBundle("harvestserver.newSetDialog.setspec.superUser.required"));
         }
 
-        StringReader rdr = new StringReader(jsonBody);
-        
-	try( JsonReader jrdr = Json.createReader(rdr) )
-	{
-		JsonObject json = jrdr.readObject();
+        JsonObject json = JsonUtil.getJsonObject(jsonBody);
 
-		OAISet set = new OAISet();
+        OAISet set = new OAISet();
 
 
 		String name, desc, defn;
@@ -168,17 +187,24 @@ public class HarvestingServer extends AbstractApiBean {
 		set.setDefinition(defn);
 		oaiSetService.save(set);
 		return created("/harvest/server/oaisets" + name, oaiSetAsJson(set));
-	}
-	
     }
 
     @PUT
+    @AuthRequired
     @Path("{specname}")
-    public Response modifyOaiSet(String jsonBody, @PathParam("specname") String spec, @QueryParam("key") String apiKey) throws IOException, JsonParseException {
+    @Operation(summary = "Updates an OAI set",
+            description = "Updates the definition or description of an OAI set when the authenticated user is a superuser.")
+    public Response modifyOaiSet(@Context ContainerRequestContext crc,
+            @RequestBody(description = "OAI set update JSON containing definition, description, or both.")
+            String jsonBody,
+            @Parameter(description = "OAI set specification name to update.", required = true)
+            @PathParam("specname") String spec,
+            @Parameter(hidden = true)
+            @QueryParam("key") String apiKey) throws IOException, JsonParseException {
 
         AuthenticatedUser dvUser;
         try {
-            dvUser = findAuthenticatedUserOrDie();
+            dvUser = getRequestAuthenticatedUserOrDie(crc);
         } catch (WrappedResponse wr) {
             return wr.getResponse();
         }
@@ -186,11 +212,8 @@ public class HarvestingServer extends AbstractApiBean {
             return badRequest(BundleUtil.getStringFromBundle("harvestserver.newSetDialog.setspec.superUser.required"));
         }
 
-        StringReader rdr = new StringReader(jsonBody);
-        
-        try (JsonReader jrdr = Json.createReader(rdr)) {
-            JsonObject json = jrdr.readObject();
-            OAISet update;
+        JsonObject json = JsonUtil.getJsonObject(jsonBody);
+        OAISet update;
             //Validating spec 
             if (!StringUtils.isEmpty(spec)) {
                 update = oaiSetService.findBySpec(spec);
@@ -221,16 +244,22 @@ public class HarvestingServer extends AbstractApiBean {
             update.setDefinition(defn);
             oaiSetService.save(update);
             return ok("/harvest/server/oaisets" + spec, oaiSetAsJson(update));
-        }
     }
     
     @DELETE
+    @AuthRequired
     @Path("{specname}")
-    public Response deleteOaiSet(@PathParam("specname") String spec, @QueryParam("key") String apiKey) {
+    @Operation(summary = "Deletes an OAI set",
+            description = "Marks an OAI set for deletion and removes it when the authenticated user is a superuser.")
+    public Response deleteOaiSet(@Context ContainerRequestContext crc,
+            @Parameter(description = "OAI set specification name to delete.", required = true)
+            @PathParam("specname") String spec,
+            @Parameter(hidden = true)
+            @QueryParam("key") String apiKey) {
         
         AuthenticatedUser dvUser;
         try {
-            dvUser = findAuthenticatedUserOrDie();
+            dvUser = getRequestAuthenticatedUserOrDie(crc);
         } catch (WrappedResponse wr) {
             return wr.getResponse();
         }
@@ -263,7 +292,13 @@ public class HarvestingServer extends AbstractApiBean {
     
     @GET
     @Path("{specname}/datasets")
-    public Response oaiSetListDatasets(@PathParam("specname") String spec, @QueryParam("key") String apiKey) throws IOException {
+    @Operation(summary = "Lists datasets in an OAI set",
+            description = "Validates that the specified OAI set exists and returns the current placeholder response for dataset listing.")
+    public Response oaiSetListDatasets(
+            @Parameter(description = "OAI set specification name whose datasets are requested.", required = true)
+            @PathParam("specname") String spec,
+            @Parameter(description = "Legacy key value accepted by the endpoint.")
+            @QueryParam("key") String apiKey) throws IOException {
         OAISet set = null;  
         try {
             set = oaiSetService.findBySpec(spec);
@@ -278,7 +313,7 @@ public class HarvestingServer extends AbstractApiBean {
     
     /* Auxiliary, helper methods: */
     public static JsonArrayBuilder oaiSetsAsJsonArray(List<OAISet> oaiSets) {
-        JsonArrayBuilder hdArr = Json.createArrayBuilder();
+        JsonArrayBuilder hdArr = JsonUtil.createArrayBuilder();
 
         for (OAISet set : oaiSets) {
             hdArr.add(oaiSetAsJson(set));

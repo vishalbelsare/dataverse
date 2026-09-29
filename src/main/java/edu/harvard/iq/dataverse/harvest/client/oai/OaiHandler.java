@@ -1,43 +1,46 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package edu.harvard.iq.dataverse.harvest.client.oai;
 
-import com.lyncode.xoai.model.oaipmh.Description;
-import com.lyncode.xoai.model.oaipmh.Granularity;
-import com.lyncode.xoai.model.oaipmh.Header;
-import com.lyncode.xoai.model.oaipmh.MetadataFormat;
-import com.lyncode.xoai.model.oaipmh.Set;
-import com.lyncode.xoai.serviceprovider.ServiceProvider;
-import com.lyncode.xoai.serviceprovider.client.HttpOAIClient;
-import com.lyncode.xoai.serviceprovider.exceptions.BadArgumentException;
-import com.lyncode.xoai.serviceprovider.exceptions.InvalidOAIResponse;
-import com.lyncode.xoai.serviceprovider.exceptions.NoSetHierarchyException;
-import com.lyncode.xoai.serviceprovider.model.Context;
-import com.lyncode.xoai.serviceprovider.parameters.ListIdentifiersParameters;
+import io.gdcc.xoai.model.oaipmh.Granularity;
+import io.gdcc.xoai.model.oaipmh.results.Record;
+import io.gdcc.xoai.model.oaipmh.results.record.Header;
+import io.gdcc.xoai.model.oaipmh.results.MetadataFormat;
+import io.gdcc.xoai.model.oaipmh.results.Set;
+import io.gdcc.xoai.model.oaipmh.verbs.Identify;
+import io.gdcc.xoai.serviceprovider.ServiceProvider;
+import io.gdcc.xoai.serviceprovider.exceptions.BadArgumentException;
+import io.gdcc.xoai.serviceprovider.exceptions.InvalidOAIResponse;
+import io.gdcc.xoai.serviceprovider.exceptions.NoSetHierarchyException;
+import io.gdcc.xoai.serviceprovider.exceptions.IdDoesNotExistException;
+import io.gdcc.xoai.serviceprovider.model.Context;
+import io.gdcc.xoai.serviceprovider.parameters.ListIdentifiersParameters;
+import io.gdcc.xoai.serviceprovider.parameters.ListRecordsParameters;
 import edu.harvard.iq.dataverse.harvest.client.FastGetRecord;
+import static edu.harvard.iq.dataverse.harvest.client.HarvesterServiceBean.DATAVERSE_PROPRIETARY_METADATA_API;
 import edu.harvard.iq.dataverse.harvest.client.HarvestingClient;
+import io.gdcc.xoai.serviceprovider.client.JdkHttpOaiClient;
 import java.io.IOException;
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.commons.lang3.StringUtils;
 import org.xml.sax.SAXException;
 import javax.xml.transform.TransformerException;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  *
  * @author Leonid Andreev
  */
 public class OaiHandler implements Serializable {
+    private static final Logger logger = Logger.getLogger("edu.harvard.iq.dataverse.harvest.client.oai.OaiHandler");
     
     public OaiHandler() {
         
@@ -71,14 +74,18 @@ public class OaiHandler implements Serializable {
         
         this.fromDate = harvestingClient.getLastNonEmptyHarvestTime();
         
+        this.customHeaders = makeCustomHeaders(harvestingClient.getCustomHttpHeaders());
+        
         this.harvestingClient = harvestingClient;
     }
     
-    private String baseOaiUrl; //= harvestingClient.getHarvestingUrl();
-    private String metadataPrefix; // = harvestingClient.getMetadataPrefix();
+    private String baseOaiUrl; 
+    private String dataverseApiUrl; // if the remote server is a Dataverse and we access its native metadata
+    private String metadataPrefix; 
     private String setName; 
     private Date   fromDate;
     private Boolean setListTruncated = false;
+    private Map<String,String> customHeaders = null;
     
     private ServiceProvider serviceProvider; 
     
@@ -124,7 +131,15 @@ public class OaiHandler implements Serializable {
         return setListTruncated;
     }
     
-    private ServiceProvider getServiceProvider() throws OaiHandlerException {
+    public Map<String,String> getCustomHeaders() {
+        return this.customHeaders;
+    }
+    
+    public void setCustomHeaders(Map<String,String> customHeaders) {
+       this.customHeaders = customHeaders;
+    }
+    
+    public ServiceProvider getServiceProvider() throws OaiHandlerException {
         if (serviceProvider == null) {
             if (baseOaiUrl == null) {
                 throw new OaiHandlerException("Could not instantiate Service Provider, missing OAI server URL.");
@@ -133,8 +148,23 @@ public class OaiHandler implements Serializable {
 
             context.withBaseUrl(baseOaiUrl);
             context.withGranularity(Granularity.Second);
-            context.withOAIClient(new HttpOAIClient(baseOaiUrl));
 
+            // Note that we are defaulting to HTTP/1 (JDK HttpClient defaults to
+            // HTTP/2 otherwise. By nature of OAI-PMH, HTTP/2 offers no practical 
+            // benefit. However, long-running harvests from servers supporting 
+            // HTTP/2 can fail due to a bug in JDK 17 (HttpClient does not 
+            // properly handle GoAway stream responses apparently). For example, 
+            // harvests from DataCite OAI-PMH were failing at 1 hour mark. 
+            JdkHttpOaiClient.Builder xoaiClientBuilder = (new JdkHttpOaiClient.JdkHttpBuilder(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1))).withBaseUrl(getBaseOaiUrl());
+            if (getCustomHeaders() != null) {
+                for (String headerName : getCustomHeaders().keySet()) {
+                    logger.fine("adding custom header; name: "+headerName+", value: "+getCustomHeaders().get(headerName));
+                }   
+                xoaiClientBuilder = xoaiClientBuilder.withCustomHeaders(getCustomHeaders());
+            }
+            xoaiClientBuilder = xoaiClientBuilder.withConnectTimeout(Duration.ofSeconds(180));
+            context.withOAIClient(xoaiClientBuilder.build());
+            context.withSaveUnparsedMetadata();
             serviceProvider = new ServiceProvider(context);
         }
         
@@ -199,6 +229,16 @@ public class OaiHandler implements Serializable {
         
         try {
             mfIter = sp.listMetadataFormats();
+        } catch (IdDoesNotExistException idnee) {
+            // TODO: 
+            // not sure why this exception is now thrown by List Metadata Formats (?)
+            // but looks like it was added in xoai 4.2. 
+            // It appears that the answer is, they added it because you can 
+            // call ListMetadataFormats on a specific identifier, optionally, 
+            // and therefore it is possible to get back that response. Of course 
+            // it will never be the case when calling it on an entire repository. 
+            // But it's ok. 
+            throw new OaiHandlerException("Id does not exist exception");
         } catch (InvalidOAIResponse ior) {
             throw new OaiHandlerException("No valid response received from the OAI server."); 
         }
@@ -230,7 +270,17 @@ public class OaiHandler implements Serializable {
                 
     }
     
-    public FastGetRecord runGetRecord(String identifier) throws OaiHandlerException { 
+    public Iterator<Record> runListRecords() throws OaiHandlerException {
+        ListRecordsParameters parameters = buildListRecordsParams();
+        try {
+            return getServiceProvider().listRecords(parameters);
+        } catch (BadArgumentException bae) {
+            throw new OaiHandlerException("BadArgumentException thrown when attempted to run ListRecords");
+        }
+                
+    }
+    
+    public FastGetRecord runGetRecord(String identifier, HttpClient httpClient) throws OaiHandlerException { 
         if (StringUtils.isEmpty(this.baseOaiUrl)) {
             throw new OaiHandlerException("Attempted to execute GetRecord without server URL specified.");
         }
@@ -239,7 +289,7 @@ public class OaiHandler implements Serializable {
         }
         
         try {
-            return new FastGetRecord(this.baseOaiUrl, identifier, this.metadataPrefix);
+            return new FastGetRecord(this, identifier, httpClient);
         } catch (ParserConfigurationException pce) {
             throw new OaiHandlerException("ParserConfigurationException executing GetRecord: "+pce.getMessage());
         } catch (SAXException se) {
@@ -261,7 +311,9 @@ public class OaiHandler implements Serializable {
         mip.withMetadataPrefix(metadataPrefix);
 
         if (this.fromDate != null) {
-            mip.withFrom(this.fromDate);
+            Identify identify = runIdentify();
+            mip.withGranularity(identify.getGranularity().toString());
+            mip.withFrom(this.fromDate.toInstant());
         }
 
         if (!StringUtils.isEmpty(this.setName)) {
@@ -271,9 +323,67 @@ public class OaiHandler implements Serializable {
         return mip;
     }
     
-    public void runIdentify() {
-        // not implemented yet
-        // (we will need it, both for validating the remote server,
-        // and to learn about its extended capabilities)
+    private ListRecordsParameters buildListRecordsParams() throws OaiHandlerException {
+        ListRecordsParameters mip = ListRecordsParameters.request();
+        
+        if (StringUtils.isEmpty(this.metadataPrefix)) {
+            throw new OaiHandlerException("Attempted to create a ListRecords request without metadataPrefix specified");
+        }
+        mip.withMetadataPrefix(metadataPrefix);
+
+        if (this.fromDate != null) {
+            mip.withFrom(this.fromDate.toInstant());
+        }
+
+        if (!StringUtils.isEmpty(this.setName)) {
+            mip.withSetSpec(this.setName);
+        }
+        
+        return mip;
+    }
+    
+    public String getProprietaryDataverseMetadataURL(String identifier) {
+
+        if (dataverseApiUrl == null) {
+            dataverseApiUrl = baseOaiUrl.replaceFirst("/oai", "");
+        }
+        
+        StringBuilder requestURL =  new StringBuilder(dataverseApiUrl);
+        requestURL.append(DATAVERSE_PROPRIETARY_METADATA_API).append(identifier);
+
+        return requestURL.toString();
+    }
+    
+    public Identify runIdentify() throws OaiHandlerException {
+        ServiceProvider sp = getServiceProvider();
+        try {
+            return sp.identify();
+        } catch (InvalidOAIResponse ior) {
+            throw new OaiHandlerException("No valid response received from the OAI server.");
+        }
+    }
+    
+    public Map<String,String> makeCustomHeaders(String headersString) {
+        if (headersString != null) {
+            String[] parts = headersString.split("\\\\n");
+            HashMap<String,String> ret = new HashMap<>();
+            logger.info("found "+parts.length+" parts");
+            int count = 0;
+            for (int i = 0; i < parts.length; i++) {
+                if (parts[i].indexOf(':') > 0) {
+                    String headerName = parts[i].substring(0, parts[i].indexOf(':'));
+                    String headerValue = parts[i].substring(parts[i].indexOf(':')+1).strip();
+                    
+                    ret.put(headerName, headerValue);
+                    count++;
+                } 
+                // simply skipping it if malformed; or we could throw an exception - ?
+            }
+            if (ret.size() > 0) {
+                logger.info("returning the array with "+ret.size()+" name/value pairs");
+                return ret;
+            }
+        }
+        return null; 
     }
 }

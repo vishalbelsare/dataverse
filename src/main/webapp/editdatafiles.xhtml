@@ -21,7 +21,7 @@
             <ui:param name="version" value="#{EditDatafilesPage.workingVersion}"/>
             <ui:param name="fileMetadatas" value="#{EditDatafilesPage.fileMetadatas}"/>
             <ui:param name="showMessagePanel" value="#{true}"/>
-            <ui:define name="body">
+            <ui:define name="metadata">
                 <f:metadata>
                     <f:viewParam name="datasetId" value="#{EditDatafilesPage.dataset.id}"/>
                     <o:viewParam name="mode" value="#{EditDatafilesPage.mode}"/>
@@ -35,6 +35,8 @@
                     <o:viewAction action="#{dataverseHeaderFragment.initBreadcrumbsForFileMetadata(EditDatafilesPage.singleFile, (EditDatafilesPage.mode == 'REPLACE' ? bundle['file.replaceFile'] : bundle['file.editFiles']))}"
                                   if="#{EditDatafilesPage.referrer == 'FILE'}" />
                 </f:metadata>
+            </ui:define>
+            <ui:define name="body">
                 <h:form id="datasetForm">
                     <!-- BEGIN: file replace original -->
                     <div class="row" jsf:rendered="#{EditDatafilesPage.fileReplaceOperation}">
@@ -62,10 +64,24 @@
                                 <ui:param name="createDataset" value="false"/>
                                 <ui:param name="showFileButtonUpdate" value="true"/>
                                 <ui:param name="rsyncSupported" value="#{EditDatafilesPage.rsyncUploadSupported()}"/>
-                                <ui:param name="lockedFromEdits" value="#{EditDatafilesPage.lockedFromEdits}"/>                             
+                                <ui:param name="globusUploadSupported" value="#{EditDatafilesPage.globusUploadSupported()}"/>
+                                <ui:param name="webloaderUploadSupported" value="#{EditDatafilesPage.webloaderUploadSupported()}"/>
+                                <ui:param name="lockedFromEdits" value="#{EditDatafilesPage.lockedFromEdits}"/>
                             </ui:include>
                         </div>
-                    </ui:fragment>  
+                    </ui:fragment> 
+                    <p:blockUI block="datasetForm" widgetVar="blockDatasetForm"/>
+                    <ui:include src="file-edit-popup-fragment.xhtml">
+                        <ui:param name="datasetVersion" value="#{EditDatafilesPage.workingVersion}"/>   
+                        <ui:param name="fileMetadataForAction" value="#{EditDatafilesPage.fileMetadataForAction}"/>
+                        <ui:param name="bean" value="#{EditDatafilesPage}"/>
+                        <ui:param name="restrictFileAction" value="restrictFiles"/>
+                        <ui:param name="deleteFileAction" value="deleteFiles"/>
+                        <ui:param name="saveEmbargoAction" value="saveEmbargo"/>
+                        <ui:param name="saveRetentionAction" value="saveRetention"/>
+                        <ui:param name="updateElements" value=":datasetForm:embargoInputs"/>
+                        <ui:param name="updateRetentionElements" value=":datasetForm:retentionInputs"/>
+                    </ui:include>
                     
                     <!-- Create/Save Dataset Button Panel -->
                     <ui:fragment id="editDataFilesButtons">
@@ -75,9 +91,9 @@
                                     <p:commandButton id="savebutton" class="btn btn-default" value="#{bundle.saveChanges}"
                                                      update=":datasetForm,:messagePanel"
                                                      onclick="PF('blockFileForm').show();"
-                                                     oncomplete="javascript:bind_bsui_components();$(document).scrollTop(0);"
+                                                     oncomplete="if (args &amp;&amp; !args.validationFailed) {$(document).scrollTop(0);}"
                                                      action="#{EditDatafilesPage.save}"/>
-                                    <p:commandButton styleClass="btn btn-link" id="cancelbutton" value="#{bundle.cancel}" action="#{EditDatafilesPage.cancel}" process="@this" update="@form" oncomplete="bind_bsui_components();"/>
+                                    <p:commandButton styleClass="btn btn-link" id="cancelbutton" value="#{bundle.cancel}" action="#{EditDatafilesPage.cancel}" process="@this" update="@form"/>
                                 </div>
                                 <div jsf:rendered="#{empty EditDatafilesPage.fileMetadatas and (datasetPage || EditDatafilesPage.showFileUploadFragment())}">
                                     <button id="doneFilesButtonnop" class="btn btn-default" value="#{bundle.done}" onclick="cancelDatasetEdit();return false;">#{bundle.done}</button>

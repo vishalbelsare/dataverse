@@ -1,44 +1,27 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
-import edu.harvard.iq.dataverse.DataFile;
-import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
-import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.GitHubOAuth2AP;
-import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.OrcidOAuth2AP;
-import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeAll;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import org.junit.Test;
-import org.junit.BeforeClass;
-
-import java.util.Map;
-import java.util.UUID;
 import java.util.logging.Logger;
 
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.UNAUTHORIZED;
-import static org.junit.Assert.*;
-import static org.hamcrest.CoreMatchers.equalTo;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.junit.Assert.assertTrue;
-import org.junit.Ignore;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class LicensesIT {
 
     private static final Logger logger = Logger.getLogger(LicensesIT.class.getCanonicalName());
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
     }
@@ -71,13 +54,46 @@ public class LicensesIT {
         String status = JsonPath.from(body).getString("status");
         assertEquals("ERROR", status);
 
-        //Succeed in adding it as a superuser
+      //Succeed in adding it as a superuser
         Response adminAddLicenseResponse = UtilIT.addLicense(pathToJsonFile, adminApiToken);
         adminAddLicenseResponse.prettyPrint();
         body = adminAddLicenseResponse.getBody().asString();
         status = JsonPath.from(body).getString("status");
         assertEquals("OK", status);
-        
+
+        // Extract the license ID from the location header
+        String locationHeader = adminAddLicenseResponse.getHeader("Location");
+        long addedLicenseId = Long.parseLong(locationHeader.substring(locationHeader.lastIndexOf("/") + 1));
+
+        // New test section to verify the added license
+        Response getLicenseResponse = UtilIT.getLicenseById(addedLicenseId);
+        getLicenseResponse.prettyPrint();
+        getLicenseResponse.then().assertThat()
+                .statusCode(OK.getStatusCode())
+                .body("data", notNullValue());
+
+        // Read the content of the license.json file
+        String expectedLicenseJson;
+        try {
+            expectedLicenseJson = new String(Files.readAllBytes(Paths.get(pathToJsonFile)));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read license file", e);
+        }
+        JsonPath expectedJson = new JsonPath(expectedLicenseJson);
+
+        // Compare the returned license data with the expected JSON
+        JsonPath actualJson = getLicenseResponse.jsonPath();
+        assertEquals(expectedJson.getString("name"), actualJson.getString("data.name"));
+        assertEquals(expectedJson.getString("uri"), actualJson.getString("data.uri"));
+        assertEquals(expectedJson.getString("shortDescription"), actualJson.getString("data.shortDescription"));
+        assertEquals(expectedJson.getString("iconUrl"), actualJson.getString("data.iconUrl"));
+        assertEquals(expectedJson.getBoolean("active"), actualJson.getBoolean("data.active"));
+        assertEquals(expectedJson.getInt("sortOrder"), actualJson.getInt("data.sortOrder"));
+        assertEquals(expectedJson.getString("rightsIdentifier"), actualJson.getString("data.rightsIdentifier"));
+        assertEquals(expectedJson.getString("rightsIdentifierScheme"), actualJson.getString("data.rightsIdentifierScheme"));
+        assertEquals(expectedJson.getString("schemeUri"), actualJson.getString("data.schemeUri"));
+        assertEquals(expectedJson.getString("languageCode"), actualJson.getString("data.languageCode"));
+
         //Fail to add a license with incorrect json (tries to define it's id which is assigned by the server)
         pathToJsonFile = "src/test/resources/json/licenseError.json";
         Response addLicenseErrorResponse = UtilIT.addLicense(pathToJsonFile, adminApiToken);
@@ -91,7 +107,8 @@ public class LicensesIT {
         getLicensesResponse.prettyPrint();
         body = getLicensesResponse.getBody().asString();
         status = JsonPath.from(body).getString("status");
-        long licenseId = JsonPath.from(body).getLong("data[-1].id");
+        //Last added license; with the highest id
+        long licenseId = (long) JsonPath.from(body).<Integer>getList("data.id").stream().max((x, y) -> Integer.compare(x, y)).get();
         //Assumes the first license is active, which should be true on a test server 
         long activeLicenseId = JsonPath.from(body).getLong("data[0].id");
         assertEquals("OK", status);
@@ -144,6 +161,20 @@ public class LicensesIT {
         status = JsonPath.from(body).getString("status");
         assertEquals("OK", status);
         
+        //Fail trying to set null sort order
+        Response setSortOrderErrorResponse = UtilIT.setLicenseSortOrderById(activeLicenseId, null, adminApiToken);
+        setSortOrderErrorResponse.prettyPrint();
+        body = setSortOrderErrorResponse.getBody().asString();
+        status = JsonPath.from(body).getString("status");
+        assertEquals("ERROR", status);
+        
+        //Succeed in setting sort order
+        Response setSortOrderResponse = UtilIT.setLicenseSortOrderById(activeLicenseId, 2l, adminApiToken);
+        setSortOrderResponse.prettyPrint();
+        body = setSortOrderResponse.getBody().asString();
+        status = JsonPath.from(body).getString("status");
+        assertEquals("OK", status);
+
         //Succeed in deleting our test license
         Response deleteLicenseByIdResponse = UtilIT.deleteLicenseById(licenseId, adminApiToken);
         deleteLicenseByIdResponse.prettyPrint();

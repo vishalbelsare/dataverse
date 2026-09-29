@@ -9,6 +9,7 @@ import edu.harvard.iq.dataverse.DataFile;
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetVersion.VersionState;
 import edu.harvard.iq.dataverse.FileMetadata;
+import edu.harvard.iq.dataverse.dataverse.featured.DataverseFeaturedItemServiceBean;
 import edu.harvard.iq.dataverse.engine.TestCommandContext;
 import edu.harvard.iq.dataverse.engine.TestDataverseEngine;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
@@ -18,19 +19,25 @@ import static edu.harvard.iq.dataverse.mocks.MocksFactory.makeRequest;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import java.sql.Timestamp;
 import java.util.Date;
-import org.junit.After;
-import org.junit.AfterClass;
-import static org.junit.Assert.assertEquals;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import static org.junit.Assert.assertTrue;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 /**
  *
  * @author sarahferry
  */
+@ExtendWith(MockitoExtension.class)
 public class RestrictFileCommandTest {
     
     TestDataverseEngine engine;
@@ -39,26 +46,32 @@ public class RestrictFileCommandTest {
     boolean restrict = true;
     boolean unrestrict = false;
     static boolean publicInstall = false;
+    @Mock
+    DataverseFeaturedItemServiceBean dataverseFeaturedItems;
     
     
     public RestrictFileCommandTest() {
     }
     
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
     }
     
-    @AfterClass
+    @AfterAll
     public static void tearDownClass() {
     }
     
-    @Before
+    @BeforeEach
     public void setUp() {
         dataset = makeDataset();
         file = makeDataFile();
 
         engine = new TestDataverseEngine(new TestCommandContext(){
 
+            @Override
+            public DataverseFeaturedItemServiceBean dataverseFeaturedItems() {
+                return dataverseFeaturedItems;
+            }
             @Override
             public SettingsServiceBean settings(){
                 return new SettingsServiceBean(){
@@ -74,7 +87,7 @@ public class RestrictFileCommandTest {
             
     }
     
-    @After
+    @AfterEach
     public void tearDown() {
     }
         
@@ -108,7 +121,7 @@ public class RestrictFileCommandTest {
         //asserts
         assertTrue(!file.isRestricted());
         boolean fileFound = false;
-        for (FileMetadata fmw : dataset.getEditVersion().getFileMetadatas()) {
+        for (FileMetadata fmw : dataset.getOrCreateEditVersion().getFileMetadatas()) {
             if (file.equals(fmw.getDataFile())) {
                 fileFound=true;
                 //If it worked fmw is for the draft version and file.getFileMetadata() is for the published version
@@ -193,7 +206,7 @@ public class RestrictFileCommandTest {
         //asserts
         assertTrue(file.isRestricted());
         boolean fileFound = false;
-        for (FileMetadata fmw : dataset.getEditVersion().getFileMetadatas()) {
+        for (FileMetadata fmw : dataset.getOrCreateEditVersion().getFileMetadatas()) {
             if (file.equals(fmw.getDataFile())) {
                 fileFound = true;
                 assertTrue(!fmw.isRestricted());
@@ -247,7 +260,7 @@ public class RestrictFileCommandTest {
         
     }
 
-    @Test 
+    @Test
     public void testPublicInstall() throws CommandException {
         file.setOwner(dataset);
         String expected = "Restricting files is not permitted on a public installation.";

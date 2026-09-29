@@ -18,17 +18,17 @@ import java.util.TreeMap;
 import java.util.logging.Logger;
 
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonString;
-import javax.json.JsonValue;
-import javax.json.JsonWriter;
-import javax.json.JsonWriterFactory;
-import javax.json.JsonValue.ValueType;
-import javax.json.stream.JsonGenerator;
-import javax.ws.rs.BadRequestException;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
+import jakarta.json.JsonWriter;
+import jakarta.json.JsonWriterFactory;
+import jakarta.json.JsonValue.ValueType;
+import jakarta.json.stream.JsonGenerator;
+import jakarta.ws.rs.BadRequestException;
 
 import edu.harvard.iq.dataverse.ControlledVocabularyValue;
 import edu.harvard.iq.dataverse.Dataset;
@@ -45,12 +45,16 @@ import edu.harvard.iq.dataverse.TermsOfUseAndAccess;
 import org.apache.commons.lang3.StringUtils;
 
 import com.apicatalog.jsonld.JsonLd;
-import com.apicatalog.jsonld.api.JsonLdError;
+import com.apicatalog.jsonld.JsonLdError;
 import com.apicatalog.jsonld.document.JsonDocument;
 
 import edu.harvard.iq.dataverse.DatasetVersion.VersionState;
+import edu.harvard.iq.dataverse.dataset.DatasetType;
+import edu.harvard.iq.dataverse.dataset.DatasetTypeServiceBean;
 import edu.harvard.iq.dataverse.license.License;
 import edu.harvard.iq.dataverse.license.LicenseServiceBean;
+import edu.harvard.iq.dataverse.pidproviders.PidProvider;
+import jakarta.json.JsonReader;
 
 public class JSONLDUtil {
 
@@ -66,7 +70,7 @@ public class JSONLDUtil {
      */
 
     public static JsonObject getContext(Map<String, String> contextMap) {
-        JsonObjectBuilder contextBuilder = Json.createObjectBuilder();
+        JsonObjectBuilder contextBuilder = JsonUtil.createObjectBuilder();
         for (Entry<String, String> e : contextMap.entrySet()) {
             contextBuilder.add(e.getKey(), e.getValue());
         }
@@ -74,13 +78,14 @@ public class JSONLDUtil {
     }
 
     public static Dataset updateDatasetMDFromJsonLD(Dataset ds, String jsonLDBody,
-                                                    MetadataBlockServiceBean metadataBlockSvc, DatasetFieldServiceBean datasetFieldSvc, boolean append, boolean migrating, LicenseServiceBean licenseSvc) {
+            MetadataBlockServiceBean metadataBlockSvc, DatasetFieldServiceBean datasetFieldSvc, boolean append,
+            boolean migrating, LicenseServiceBean licenseSvc, DatasetTypeServiceBean datasetTypeSvc) {
 
         DatasetVersion dsv = new DatasetVersion();
 
         JsonObject jsonld = decontextualizeJsonLD(jsonLDBody);
         if (migrating) {
-            Optional<GlobalId> maybePid = GlobalId.parse(jsonld.getString("@id"));
+            Optional<GlobalId> maybePid = PidProvider.parse(jsonld.getString("@id"));
             if (maybePid.isPresent()) {
                 ds.setGlobalId(maybePid.get());
             } else {
@@ -88,6 +93,17 @@ public class JSONLDUtil {
                 throw new BadRequestException("Cannot parse the @id '" + jsonld.getString("@id")
                         + "'. Make sure it is in valid form - see Dataverse Native API documentation.");
             }
+        }
+        
+        //Store the metadatalanguage if sent - the caller needs to check whether it is allowed (as with any GlobalID)
+        ds.setMetadataLanguage(jsonld.getString(JsonLDTerm.schemaOrg("inLanguage").getUrl(),null));
+
+        String datasetTypeIn = jsonld.getString(JsonLDTerm.datasetType.getUrl(), DatasetType.DEFAULT_DATASET_TYPE);
+        DatasetType datasetType = datasetTypeSvc.getByName(datasetTypeIn);
+        if (datasetType != null) {
+            ds.setDatasetType(datasetType);
+        } else {
+            throw new BadRequestException("Invalid dataset type: " + datasetTypeIn);
         }
 
         dsv = updateDatasetVersionMDFromJsonLD(dsv, jsonld, metadataBlockSvc, datasetFieldSvc, append, migrating, licenseSvc);
@@ -235,6 +251,7 @@ public class JSONLDUtil {
             }
         }
         dsv.setTermsOfUseAndAccess(terms);
+        terms.setDatasetVersion(dsv);
         dsv.setDatasetFields(dsfl);
 
         return dsv;
@@ -344,7 +361,9 @@ public class JSONLDUtil {
      * @return null if exact match, otherwise return a field without the value to be deleted
      */
     private static DatasetField getReplacementField(DatasetField dsf, JsonArray valArray) {
-        // TODO Auto-generated method stub
+        // TODO Parse valArray and remove any matching entries in the dsf
+        // Until then, delete removes all values of a multivalued field
+        // Doing this on a required field will fail.
         return null;
     }
 
@@ -457,7 +476,6 @@ public class JSONLDUtil {
                     if(!datasetFieldSvc.isValidCVocValue(dsft, strValue)) {
                         throw new BadRequestException("Invalid values submitted for " + dsft.getName() + " which is limited to specific vocabularies.");
                     }
-                    datasetFieldSvc.registerExternalTerm(cvocMap.get(dsft.getId()), strValue);
                 }
                 DatasetFieldValue datasetFieldValue = new DatasetFieldValue();
 
@@ -480,7 +498,7 @@ public class JSONLDUtil {
                 valArray = (JsonArray) val;
             }
         } else {
-            valArray = Json.createArrayBuilder().add(val).build();
+            valArray = JsonUtil.createArrayBuilder().add(val).build();
         }
         return valArray;
     }
@@ -488,27 +506,13 @@ public class JSONLDUtil {
     static Map<String, String> localContext = new TreeMap<String, String>();
     static Map<String, DatasetFieldType> dsftMap = new TreeMap<String, DatasetFieldType>();
 
+    //A map if DatasetFieldTypes by decontextualized URL
     private static void populateFieldTypeMap(MetadataBlockServiceBean metadataBlockSvc) {
         if (dsftMap.isEmpty()) {
-
             List<MetadataBlock> mdbList = metadataBlockSvc.listMetadataBlocks();
-
             for (MetadataBlock mdb : mdbList) {
-                boolean blockHasUri = mdb.getNamespaceUri() != null;
                 for (DatasetFieldType dsft : mdb.getDatasetFieldTypes()) {
-                    if (dsft.getUri() != null) {
-                        dsftMap.put(dsft.getUri(), dsft);
-                    }
-                    if (blockHasUri) {
-                        if (dsft.getParentDatasetFieldType() != null) {
-                            // ToDo - why not getName for child type? Would have to fix in ORE generation
-                            // code and handle legacy bags
-                            dsftMap.put(mdb.getNamespaceUri() + dsft.getParentDatasetFieldType().getName() + "#"
-                                    + dsft.getTitle(), dsft);
-                        } else {
-                            dsftMap.put(mdb.getNamespaceUri() + dsft.getTitle(), dsft);
-                        }
-                    }
+                    dsftMap.put(dsft.getJsonLDTerm().getUrl(), dsft);
                 }
             }
             logger.fine("DSFT Map: " + String.join(", ", dsftMap.keySet()));
@@ -519,15 +523,12 @@ public class JSONLDUtil {
         if (localContext.isEmpty()) {
 
             List<MetadataBlock> mdbList = metadataBlockSvc.listMetadataBlocks();
-
             for (MetadataBlock mdb : mdbList) {
-                boolean blockHasUri = mdb.getNamespaceUri() != null;
-                if (blockHasUri) {
-                    JsonLDNamespace.defineNamespace(mdb.getName(), mdb.getNamespaceUri());
-                }
+                //Assures the mdb's namespace is in the list checked by JsonLDNamespace.isInNamespace() below
+                mdb.getJsonLDNamespace();
                 for (DatasetFieldType dsft : mdb.getDatasetFieldTypes()) {
                     if ((dsft.getUri() != null) && !JsonLDNamespace.isInNamespace(dsft.getUri())) {
-                        //Add term if uri exists and it's not in one of the namespaces already defined
+                        // Add term if uri exists and it's not in one of the namespaces already defined
                         localContext.putIfAbsent(dsft.getName(), dsft.getUri());
                     }
                 }
@@ -539,23 +540,18 @@ public class JSONLDUtil {
 
     public static JsonObject decontextualizeJsonLD(String jsonLDString) {
         logger.fine(jsonLDString);
-        try (StringReader rdr = new StringReader(jsonLDString)) {
-
-            // Use JsonLd to expand/compact to localContext
-            JsonObject jsonld = Json.createReader(rdr).readObject();
+        try {
+            JsonObject jsonld = JsonUtil.getJsonObject(jsonLDString);
             JsonDocument doc = JsonDocument.of(jsonld);
-            JsonArray array = null;
-            try {
-                array = JsonLd.expand(doc).get();
-                jsonld = JsonLd.compact(JsonDocument.of(array), JsonDocument.of(Json.createObjectBuilder().build()))
-                        .get();
-                // jsonld = array.getJsonObject(0);
-                logger.fine("Decontextualized object: " + jsonld);
-                return jsonld;
-            } catch (JsonLdError e) {
-                System.out.println(e.getMessage());
-                return null;
-            }
+            // Use JsonLd to expand/compact to localContext
+            JsonArray array = JsonLd.expand(doc).get();
+            jsonld = JsonLd.compact(JsonDocument.of(array), JsonDocument.of(JsonUtil.createObjectBuilder().build())).get();
+            // jsonld = array.getJsonObject(0);
+            logger.fine("Decontextualized object: " + jsonld);
+            return jsonld;
+        } catch (JsonLdError e) {
+            logger.warning(e.getMessage());
+            return null;
         }
     }
 
@@ -583,7 +579,7 @@ public class JSONLDUtil {
         StringWriter sw = new StringWriter();
         Map<String, Object> properties = new HashMap<>(1);
         properties.put(JsonGenerator.PRETTY_PRINTING, true);
-        JsonWriterFactory writerFactory = Json.createWriterFactory(properties);
+        JsonWriterFactory writerFactory = JsonUtil.createWriterFactory(properties);
         JsonWriter jsonWriter = writerFactory.createWriter(sw);
         jsonWriter.write(val);
         jsonWriter.close();

@@ -56,15 +56,15 @@ function preliminary_setup()
 
   # avoid OutOfMemoryError: PermGen per http://eugenedvorkin.com/java-lang-outofmemoryerror-permgen-space-error-during-deployment-to-glassfish/
   #./asadmin $ASADMIN_OPTS list-jvm-options
-  # Note that these JVM options are different for Payara5 and Glassfish4:
+  # Note that these JVM options are different for Payara and Glassfish4:
   # old Glassfish4 options: (commented out)
   #./asadmin $ASADMIN_OPTS delete-jvm-options "-XX\:MaxPermSize=192m"
   #./asadmin $ASADMIN_OPTS create-jvm-options "-XX\:MaxPermSize=512m"
   #./asadmin $ASADMIN_OPTS create-jvm-options "-XX\:PermSize=256m"
-  # payara5 ships with the "-server" option already in domain.xml, so no need:
+  # Payara ships with the "-server" option already in domain.xml, so no need:
   #./asadmin $ASADMIN_OPTS delete-jvm-options -client
 
-  # new Payara5 options: (thanks to donsizemore@unc.edu)
+  # new Payara options: (thanks to donsizemore@unc.edu)
   ./asadmin $ASADMIN_OPTS create-jvm-options "-XX\:MaxMetaspaceSize=512m"
   ./asadmin $ASADMIN_OPTS create-jvm-options "-XX\:MetaspaceSize=256m"
   ./asadmin $ASADMIN_OPTS create-jvm-options "-Dfish.payara.classloading.delegate=false"
@@ -102,17 +102,19 @@ function preliminary_setup()
   # password reset token timeout in minutes
   ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.auth.password-reset-timeout-in-minutes=60"
 
-  # DataCite DOI Settings
+  # Fake DOI Settings
   # (we can no longer offer EZID with their shared test account)
   # jvm-options use colons as separators, escape as literal
   DOI_BASEURL_ESC=`echo $DOI_BASEURL | sed -e 's/:/\\\:/'`
-  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddoi.username=${DOI_USERNAME}"
-  ./asadmin $ASADMIN_OPTS create-jvm-options '\-Ddoi.password=${ALIAS=doi_password_alias}'
-  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddoi.baseurlstring=$DOI_BASEURL_ESC"
-
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.providers=fake"
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.fake.type=FAKE"
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.fake.label=Fake DOI Provider"
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.fake.authority=10.5072"
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.fake.shoulder=FK2/"
+  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.default-provider=fake"
   # jvm-options use colons as separators, escape as literal
-  DOI_DATACITERESTAPIURL_ESC=`echo $DOI_DATACITERESTAPIURL | sed -e 's/:/\\\:/'`
-  ./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddoi.dataciterestapiurlstring=$DOI_DATACITERESTAPIURL_ESC"
+  #DOI_DATACITERESTAPIURL_ESC=`echo $DOI_DATACITERESTAPIURL | sed -e 's/:/\\\:/'`
+  #./asadmin $ASADMIN_OPTS create-jvm-options "\-Ddataverse.pid.testDC.datacite.rest-api-url=$DOI_DATACITERESTAPIURL_ESC"
 
   ./asadmin $ASADMIN_OPTS create-jvm-options "-Ddataverse.timerServer=true"
 
@@ -121,6 +123,10 @@ function preliminary_setup()
 
   # bump the http-listener timeout from 900 to 3600
   ./asadmin $ASADMIN_OPTS set server-config.network-config.protocols.protocol.http-listener-1.http.request-timeout-seconds="${GLASSFISH_REQUEST_TIMEOUT}"
+
+  # Set SameSite cookie value: https://docs.payara.fish/community/docs/6.2024.6/Technical%20Documentation/Payara%20Server%20Documentation/General%20Administration/Administering%20HTTP%20Connectivity.html
+  ./asadmin $ASADMIN_OPTS set server-config.network-config.protocols.protocol.http-listener-1.http.cookie-same-site-value="Lax"
+  ./asadmin $ASADMIN_OPTS set server-config.network-config.protocols.protocol.http-listener-1.http.cookie-same-site-enabled="true"
 
   # so we can front with apache httpd ( ProxyPass / ajp://localhost:8009/ )
   ./asadmin $ASADMIN_OPTS create-network-listener --protocol http-listener-1 --listenerport 8009 --jkenabled true jk-connector
@@ -143,30 +149,28 @@ function final_setup(){
 	# delete any existing mail/notifyMailSession; configure port, if provided:
 
 	./asadmin delete-javamail-resource mail/notifyMailSession
-
-	if [ $SMTP_SERVER_PORT"x" != "x" ]
-	then
-            ./asadmin $ASADMIN_OPTS create-javamail-resource --mailhost "$SMTP_SERVER" --mailuser "dataversenotify" --fromaddress "do-not-reply@${HOST_ADDRESS}" --property mail.smtp.port="${SMTP_SERVER_PORT}" mail/notifyMailSession
-	else
-	    ./asadmin $ASADMIN_OPTS create-javamail-resource --mailhost "$SMTP_SERVER" --mailuser "dataversenotify" --fromaddress "do-not-reply@${HOST_ADDRESS}" mail/notifyMailSession
+	./asadmin $ASADMIN_OPTS create-system-properties "dataverse.mail.system-email='${ADMIN_EMAIL}'"
+  ./asadmin $ASADMIN_OPTS create-system-properties "dataverse.mail.mta.host='${SMTP_SERVER}'"
+	if [ "x${SMTP_SERVER_PORT}" != "x" ]; then
+    ./asadmin $ASADMIN_OPTS create-system-properties "dataverse.mail.mta.port='${SMTP_SERVER_PORT}'"
 	fi
 
 }
 
 if [ "$DOCKER_BUILD" = "true" ]
   then
-    FILES_DIR="/usr/local/payara5/glassfish/domains/domain1/files"
+    FILES_DIR="/usr/local/payara7/glassfish/domains/domain1/files"
     RSERVE_HOST="localhost"
     RSERVE_PORT="6311"
     RSERVE_USER="rserve"
     RSERVE_PASS="rserve"
     HOST_ADDRESS="localhost\:8080"
-    pushd /usr/local/payara5/glassfish/bin/
+    pushd /usr/local/payara7/glassfish/bin/
     ./asadmin start-domain domain1
     preliminary_setup
-    chmod -R 777 /usr/local/payara5/
-    rm -rf /usr/local/payara5/glassfish/domains/domain1/generated 
-    rm -rf /usr/local/payara5/glassfish/domains/domain1/applications
+    chmod -R 777 /usr/local/payara7/
+    rm -rf /usr/local/payara7/glassfish/domains/domain1/generated
+    rm -rf /usr/local/payara7/glassfish/domains/domain1/applications
     popd
     exit 0
 fi
@@ -276,7 +280,13 @@ if [ ! -d "$DOMAIN_DIR" ]
     exit 2
 fi
 
-echo "Setting up your app. server (Payara5) to support Dataverse"
+if [ -z "$ADMIN_EMAIL" ]
+ then
+  echo "You must specify the system admin email address (ADMIN_EMAIL)."
+  exit 1
+fi
+
+echo "Setting up your app. server (Payara) to support Dataverse"
 echo "Payara directory: "$GLASSFISH_ROOT
 echo "Domain directory:    "$DOMAIN_DIR
 

@@ -11,7 +11,7 @@
 <ui:fragment rendered="#{widgetWrapper.widgetView}">
     <p class="help-block">
         <h:outputFormat value="#{bundle['file.dataFilesTab.versions.widget.viewMoreInfo']}" escape="false">
-            <f:param value="#{DatasetPage.dataset.globalIdString}"/>
+            <f:param value="#{DatasetPage.dataset.globalId.asString()}"/>
             <f:param value="#{DatasetPage.dataset.displayName}"/>
             <f:param value="#{dataverseServiceBean.findRootDataverse().displayName}"/>
         </h:outputFormat>
@@ -59,11 +59,11 @@
             <ui:fragment rendered="#{versionTab.released 
                                      or ((versionTab.deaccessioned or versionTab.draft) and permissionServiceBean.on(DatasetPage.dataset).has('ViewUnpublishedDataset'))}">
                 <ui:fragment rendered="#{!(versionTab.released or versionTab.deaccessioned)}">
-                    <a href="/dataset.xhtml?persistentId=#{versionTab.dataset.globalIdString}&#38;version=#{versionTab.versionState}" class="ui-commandlink ui-widget">
+                    <a href="/dataset.xhtml?persistentId=#{versionTab.dataset.globalId.asString()}&#38;version=#{versionTab.versionState}" class="ui-commandlink ui-widget">
                         <h:outputText rendered="#{!(versionTab.released or versionTab.deaccessioned)}" value="#{versionTab.versionState}" /></a>
                 </ui:fragment>
                 <ui:fragment rendered="#{(versionTab.released or versionTab.deaccessioned)}">
-                    <a href="/dataset.xhtml?persistentId=#{versionTab.dataset.globalIdString}&#38;version=#{versionTab.versionNumber}.#{versionTab.minorVersionNumber}" class="ui-commandlink ui-widget">
+                    <a href="/dataset.xhtml?persistentId=#{versionTab.dataset.globalId.asString()}&#38;version=#{versionTab.versionNumber}.#{versionTab.minorVersionNumber}" class="ui-commandlink ui-widget">
                         <h:outputText rendered="#{versionTab.released or versionTab.deaccessioned}" value="#{versionTab.versionNumber}.#{versionTab.minorVersionNumber}" /></a>
                 </ui:fragment>
             </ui:fragment>
@@ -77,28 +77,28 @@
                 <ui:fragment rendered="#{!empty(versionTab.defaultVersionDifference.summaryDataForNote)}">
                     <h:outputText styleClass="highlightBold" value="#{bundle['file.dataFilesTab.versions.citationMetadata']} " />
                     <ui:repeat value="#{versionTab.defaultVersionDifference.summaryDataForNote}" var="summaryNote">
-                        <h:outputText value=" #{summaryNote[0].datasetFieldType.displayName} (" />
-                        <h:outputText rendered="#{(summaryNote[1]) > 0 and summaryNote[0].datasetFieldType.allowMultiples}" value="#{summaryNote[1]} #{bundle['file.dataFilesTab.versions.added']}" />
-                        <h:outputText rendered="#{(summaryNote[1]) > 0 and !(summaryNote[0].datasetFieldType.allowMultiples)}"  value="#{bundle['file.dataFilesTab.versions.added']}" />
-                        <h:outputText rendered="#{(summaryNote[1]) > 0 and (summaryNote[2] + summaryNote[3]) > 0}" value=", " />
-                        <h:outputText rendered="#{(summaryNote[2]) > 0 and summaryNote[0].datasetFieldType.allowMultiples}" value="#{summaryNote[2]} #{bundle['file.dataFilesTab.versions.removed']}" />
-                        <h:outputText rendered="#{(summaryNote[2]) > 0 and !(summaryNote[0].datasetFieldType.allowMultiples)}" value="#{bundle['file.dataFilesTab.versions.removed']}" />
-                        <h:outputText rendered="#{(summaryNote[2]) > 0 and (summaryNote[3]) > 0}" value=", " />
-                        <h:outputText rendered="#{(summaryNote[3]) > 0 and summaryNote[0].datasetFieldType.allowMultiples}" value="#{summaryNote[3]} #{bundle['file.dataFilesTab.versions.changed']}" />
-                        <h:outputText rendered="#{(summaryNote[3]) > 0 and !(summaryNote[0].datasetFieldType.allowMultiples)}" value="#{bundle['file.dataFilesTab.versions.changed']}" />
+                        <h:outputText value=" #{summaryNote.datasetField.datasetFieldType.displayName} (" />
+                        <h:outputText rendered="#{(summaryNote.added) > 0 and summaryNote.datasetField.datasetFieldType.allowMultiples}" value="#{summaryNote.added} #{bundle['file.dataFilesTab.versions.added']}" />
+                        <h:outputText rendered="#{(summaryNote.added) > 0 and !(summaryNote.datasetField.datasetFieldType.allowMultiples)}"  value="#{bundle['file.dataFilesTab.versions.added']}" />
+                        <h:outputText rendered="#{(summaryNote.added) > 0 and (summaryNote.deleted + summaryNote.changed) > 0}" value=", " />
+                        <h:outputText rendered="#{(summaryNote.deleted) > 0 and summaryNote.datasetField.datasetFieldType.allowMultiples}" value="#{summaryNote.deleted} #{bundle['file.dataFilesTab.versions.removed']}" />
+                        <h:outputText rendered="#{(summaryNote.deleted) > 0 and !(summaryNote.datasetField.datasetFieldType.allowMultiples)}" value="#{bundle['file.dataFilesTab.versions.removed']}" />
+                        <h:outputText rendered="#{(summaryNote.deleted) > 0 and (summaryNote.changed) > 0}" value=", " />
+                        <h:outputText rendered="#{(summaryNote.changed) > 0 and summaryNote.datasetField.datasetFieldType.allowMultiples}" value="#{summaryNote.changed} #{bundle['file.dataFilesTab.versions.changed']}" />
+                        <h:outputText rendered="#{(summaryNote.changed) > 0 and !(summaryNote.datasetField.datasetFieldType.allowMultiples)}" value="#{bundle['file.dataFilesTab.versions.changed']}" />
                         <h:outputText value="); " />
                     </ui:repeat>
                 </ui:fragment>
                 <ui:fragment rendered="#{!empty(versionTab.defaultVersionDifference.blockDataForNote)}">
                     <ui:repeat value="#{versionTab.defaultVersionDifference.blockDataForNote}" var="blockNote">
-                        <h:outputText styleClass="highlightBold" rendered="#{blockNote[0].datasetFieldType.metadataBlock.displayName == 'Citation Metadata'}" value="#{bundle['file.dataFilesTab.versions.additionalCitationMetadata']} " />
-                        <h:outputText styleClass="highlightBold" rendered="#{!(blockNote[0].datasetFieldType.metadataBlock.displayName == 'Citation Metadata')}" value=" #{blockNote[0].datasetFieldType.metadataBlock.displayName}: " />
+                        <h:outputText styleClass="highlightBold" rendered="#{blockNote.datasetField.datasetFieldType.metadataBlock.displayName == 'Citation Metadata'}" value="#{bundle['file.dataFilesTab.versions.additionalCitationMetadata']} " />
+                        <h:outputText styleClass="highlightBold" rendered="#{!(blockNote.datasetField.datasetFieldType.metadataBlock.displayName == 'Citation Metadata')}" value=" #{blockNote.datasetField.datasetFieldType.metadataBlock.localeDisplayName}: " />
                         <h:outputText value=" (" />
-                        <h:outputText rendered="#{blockNote[1] > 0}" value="#{blockNote[1]} #{bundle['file.dataFilesTab.versions.added']}" />
-                        <h:outputText rendered="#{(blockNote[1]) > 0 and (blockNote[2] + blockNote[3]) > 0}" value=", " />
-                        <h:outputText rendered="#{(blockNote[2]) > 0}" value="#{blockNote[2]} #{bundle['file.dataFilesTab.versions.removed']}" />
-                        <h:outputText rendered="#{(blockNote[2]) > 0 and (blockNote[3]) > 0}" value=", " />
-                        <h:outputText rendered="#{(blockNote[3]) > 0}" value="#{blockNote[3]} #{bundle['file.dataFilesTab.versions.changed']}" />
+                        <h:outputText rendered="#{blockNote.added > 0}" value="#{blockNote.added} #{bundle['file.dataFilesTab.versions.added']}" />
+                        <h:outputText rendered="#{(blockNote.added) > 0 and (blockNote.changed + blockNote.deleted) > 0}" value=", " />
+                        <h:outputText rendered="#{(blockNote.deleted) > 0}" value="#{blockNote.deleted} #{bundle['file.dataFilesTab.versions.removed']}" />
+                        <h:outputText rendered="#{(blockNote.deleted) > 0 and (blockNote.changed) > 0}" value=", " />
+                        <h:outputText rendered="#{(blockNote.changed) > 0}" value="#{blockNote.changed} #{bundle['file.dataFilesTab.versions.changed']}" />
                         <h:outputText value="); " />
                     </ui:repeat>
                 </ui:fragment>
@@ -120,7 +120,11 @@
                     #{bundle['file.dataFilesTab.versions.description.firstPublished']}
                 </ui:fragment>
                 <ui:fragment rendered="#{versionTab.deaccessioned}">
-                    #{bundle['file.dataFilesTab.versions.description.deaccessionedReason']} #{versionTab.versionNote} <ui:fragment rendered="#{!empty versionTab.archiveNote}">#{bundle['file.dataFilesTab.versions.description.beAccessedAt']} <a href="#{versionTab.archiveNote}" target="_blank">#{versionTab.archiveNote}</a></ui:fragment>
+                    #{bundle['file.dataFilesTab.versions.description.deaccessionedReason']} #{versionTab.deaccessionNote} 
+                    <ui:fragment rendered="#{!empty versionTab.deaccessionLink}">#{bundle['file.dataFilesTab.versions.description.beAccessedAt']}
+                        <h:outputLink rendered="#{versionTab.deaccessionLinkAsURLString ne null}" value="#{versionTab.deaccessionLinkAsURLString}" target="_blank">#{versionTab.deaccessionLink}</h:outputLink>
+                        <h:outputText rendered="#{versionTab.deaccessionLinkAsURLString eq null}" value="#{versionTab.deaccessionLink}"/>
+                    </ui:fragment>
                 </ui:fragment>
             </ui:fragment>
             <p:commandLink rendered="#{(!empty(versionTab.defaultVersionDifference)) and DatasetPage.versionTabListForPostLoad.size() > (rowNum + 1)}"
@@ -129,9 +133,19 @@
                            update=":datasetForm"
                            value="#{bundle['file.dataFilesTab.versions.viewDetails.btn']}"></p:commandLink>
         </p:column><!-- end: description column -->
+        
+        <!-- start: versionNote column -->
+        <p:column headerText="#{bundle['file.dataFilesTab.versions.headers.versionNote']}" class="col-sm-2" rendered="#{versionNoteEnabled}">
+            <ui:fragment rendered="#{versionNoteEnabled}">
+                <div><h:outputText value="#{versionTab.versionNote}" /></div>
+            </ui:fragment>
+            <p:commandLink rendered="#{versionNoteEnabled and versionTab.draft and (workingVersion.id==versionTab.id)}"
+                           oncomplete="PF('editVersionNoteDialog').show();"
+                           value="#{bundle['file.dataFilesTab.versions.versionNote.btn']}"></p:commandLink>
+        </p:column><!-- end: versionNote column -->
 
         <!-- contributor column -->
-        <p:column headerText="#{bundle['file.dataFilesTab.versions.headers.contributors']}" class="col-sm-3">
+        <p:column headerText="#{bundle['file.dataFilesTab.versions.headers.contributors']}" class="col-sm-2">
             <ui:fragment rendered="#{!empty(versionTab.contributorNames) and !anonymized}">
                 <h:outputText value="#{versionTab.contributorNames}" />
             </ui:fragment>
@@ -147,6 +161,31 @@
                 <h:outputText id="versionDate" value="#{versionTab.publicationDateAsString}" />
             </ui:fragment>
         </p:column><!-- end: date column -->
+        <p:column headerText="#{bundle['file.dataFilesTab.versions.headers.archived']}" class="col-sm-1"  rendered="#{!empty(DatasetPage.dataset.id) and permissionServiceBean.on(DatasetPage.dataset).has('ViewUnpublishedDataset') and !versionTab.isDraft() and (DatasetPage.archivable  or DatasetPage.someVersionArchived or not empty(versionTab.archivalCopyLocation))}">
+            <ui:fragment>
+              <ui:fragment rendered="#{'success' eq versionTab.archivalCopyLocationStatus}">
+                <h:outputLink id="archived" value="#{versionTab.archivalCopyLocationMessage}" target="_blank" rendered="#{DatasetPage.isSuperUser()}">
+                    <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.success']}" />
+                </h:outputLink>
+                <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.success']}" rendered="#{!DatasetPage.isSuperUser()}"/>
+              </ui:fragment>
+              <ui:fragment rendered="#{'obsolete' eq versionTab.archivalCopyLocationStatus}">
+                <h:outputLink id="oldarchived" value="#{versionTab.archivalCopyLocationMessage}" target="_blank" rendered="#{DatasetPage.isSuperUser()}">
+                    <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.obsolete']}" />
+                </h:outputLink>
+                <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.obsolete']}" rendered="#{!DatasetPage.isSuperUser()}"/>
+              </ui:fragment>
+              <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.pending']}" rendered="#{'pending' eq versionTab.archivalCopyLocationStatus}" title="#{DatasetPage.isSuperUser() ? versionTab.archivalCopyLocationMessage : ''}"/>
+              <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.failure']}" rendered="#{'failure' eq versionTab.archivalCopyLocationStatus}" title="#{DatasetPage.isSuperUser() ? versionTab.archivalCopyLocationMessage : ''}"/>
+              <h:outputText  value="#{bundle['file.dataFilesTab.versions.headers.archived.notarchived']}" rendered="#{ empty(versionTab.archivalCopyLocation) and ((not DatasetPage.isSuperUser() and DatasetPage.someVersionArchived) or DatasetPage.isSuperUser())}"/>
+              <p:commandLink styleClass="archive-submit-link" rendered="#{DatasetPage.isSuperUser() and DatasetPage.isVersionArchivable(versionTab.id)}" update="#{p:resolveClientId('datasetForm:tabView:versionsTable', view)},:messagePanel" 
+                                                   action="#{DatasetPage.archiveVersion(versionTab.id, !empty(versionTab.archivalCopyLocationStatus))}">
+                  <h:outputText value="#{bundle['file.dataFilesTab.versions.headers.archived.submit']}"/>
+              </p:commandLink>
+              
+              
+            </ui:fragment>
+        </p:column><!-- end: archivalCopy column -->
     </p:dataTable>
 <!-- / VERSIONS -->
 </ui:fragment>

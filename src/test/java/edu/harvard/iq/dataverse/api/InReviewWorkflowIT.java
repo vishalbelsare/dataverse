@@ -1,38 +1,37 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.path.xml.XmlPath;
-import com.jayway.restassured.response.Response;
-import static edu.harvard.iq.dataverse.api.AccessIT.apiToken;
+import edu.harvard.iq.dataverse.util.BundleUtil;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import io.restassured.path.xml.XmlPath;
+import io.restassured.response.Response;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
-import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.UNAUTHORIZED;
-import static javax.ws.rs.core.Response.Status.NO_CONTENT;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+
+import static edu.harvard.iq.dataverse.UserNotification.Type.*;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.FORBIDDEN;
+import static jakarta.ws.rs.core.Response.Status.OK;
+import static jakarta.ws.rs.core.Response.Status.UNAUTHORIZED;
+import static jakarta.ws.rs.core.Response.Status.NO_CONTENT;
 import static org.hamcrest.CoreMatchers.equalTo;
-import org.junit.Assert;
-import static org.junit.Assert.assertTrue;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class InReviewWorkflowIT {
 
-    private static final Logger logger = Logger.getLogger(DatasetsIT.class.getCanonicalName());
-
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
 
     }
 
     @Test
-    public void testCuratorSendsCommentsToAuthor() throws InterruptedException {
+    public void testCuratorSendsCommentsToAuthor() {
         Response createCurator = UtilIT.createRandomUser();
         createCurator.prettyPrint();
         createCurator.then().assertThat()
@@ -123,25 +122,34 @@ public class InReviewWorkflowIT {
                 .body("message", equalTo("You cannot submit this dataset for review because it is already in review."))
                 .statusCode(FORBIDDEN.getStatusCode());
 
+        // Confirm that when getting the dataset, the "InReview" lock is listed
+        Response getDatasetJson = UtilIT.nativeGet(datasetId, authorApiToken);
+        getDatasetJson.prettyPrint();
+        getDatasetJson.then().assertThat()
+                .body("data.locks[0]", equalTo("InReview"))
+                .statusCode(200);
+
         Response authorsChecksForCommentsPrematurely = UtilIT.getNotifications(authorApiToken);
         authorsChecksForCommentsPrematurely.prettyPrint();
         authorsChecksForCommentsPrematurely.then().assertThat()
-                .body("data.notifications[0].type", equalTo("CREATEACC"))
+                .body("data[0].type", equalTo(CREATEACC.toString()))
                 // The author thinks, "What's taking the curator so long to review my data?!?"
-                .body("data.notifications[1]", equalTo(null))
+                .body("data[1]", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         String joeRandomComments = "Joe Random says you'll never graduate.";
-        JsonObjectBuilder joeRandObj = Json.createObjectBuilder();
+        JsonObjectBuilder joeRandObj = JsonUtil.createObjectBuilder();
         joeRandObj.add("reasonForReturn", joeRandomComments);
 
         Response curatorChecksNotificationsAndFindsWorkToDo = UtilIT.getNotifications(curatorApiToken);
         curatorChecksNotificationsAndFindsWorkToDo.prettyPrint();
         curatorChecksNotificationsAndFindsWorkToDo.then().assertThat()
-                .body("data.notifications[0].type", equalTo("SUBMITTEDDS"))
-                .body("data.notifications[0].reasonForReturn", equalTo(null))
-                .body("data.notifications[1].type", equalTo("CREATEACC"))
-                .body("data.notifications[1].reasonForReturn", equalTo(null))
+                .body("data[0].type", equalTo(SUBMITTEDDS.toString()))
+                .body("data[0].reasonForReturn", equalTo(null))
+                .body("data[1].type", equalTo(CREATEDV.toString()))
+                .body("data[1].reasonForReturn", equalTo(null))
+                .body("data[2].type", equalTo(CREATEACC.toString()))
+                .body("data[2].reasonForReturn", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         // Joe Random, a user with no perms on dataset, tries returning the dataset as if he's a curator and fails.
@@ -170,7 +178,7 @@ public class InReviewWorkflowIT {
                 .statusCode(OK.getStatusCode());
         String citation = XmlPath.from(atomEntry.body().asString()).getString("bibliographicCitation");
         System.out.println("citation: " + citation);
-        Assert.assertTrue(citation.contains("A Better Title"));
+        assertTrue(citation.contains("A Better Title"));
 
         // The author tries to update the title while the dataset is in review via native.
         String pathToJsonFile = "doc/sphinx-guides/source/_static/api/dataset-update-metadata.json";
@@ -186,7 +194,7 @@ public class InReviewWorkflowIT {
         String citationAuthorNative = XmlPath.from(atomEntryAuthorNative.body().asString()).getString("bibliographicCitation");
         System.out.println("citation: " + citationAuthorNative);
         // The author was unable to change the title.
-        Assert.assertTrue(citationAuthorNative.contains("A Better Title"));
+        assertTrue(citationAuthorNative.contains("A Better Title"));
 
         // The author remembers she forgot to add a file and tries to upload it while
         // the dataset is in review via native API but this fails.
@@ -227,19 +235,19 @@ public class InReviewWorkflowIT {
             boolean exerciseConcurrentModificationException = false;
             if (exerciseConcurrentModificationException) {
                 String comments = "How do we feel about concurrency?";
-                JsonObjectBuilder jsonObjectBuilder = Json.createObjectBuilder();
+                JsonObjectBuilder jsonObjectBuilder = JsonUtil.createObjectBuilder();
                 jsonObjectBuilder.add("reasonForReturn", comments);
                 Response returnToAuthor = UtilIT.returnDatasetToAuthor(datasetPersistentId, jsonObjectBuilder.build(), curatorApiToken);
                 returnToAuthor.prettyPrint();
             } else {
-                // Increasing the sleep delay here, from 2 to 10 sec.; 
+                // Increasing the sleep delay here, from 2 to 10 sec.;
                 // With the 2 sec. delay, it appears to have been working consistently
-                // on the phoenix server (because it's fast, I'm guessing?) - but 
-                // I kept seeing an error on my own build at this point once in a while, 
-                // because the dataset is still locked when we try to edit it, 
-                // a few lines down. -- L.A. Oct. 2018  
+                // on Jenkins (because it's fast, I'm guessing?) - but
+                // I kept seeing an error on my own build at this point once in a while,
+                // because the dataset is still locked when we try to edit it,
+                // a few lines down. -- L.A. Oct. 2018
                 // Changes to test for ingest lock and 3 seconds duration SEK 09/2019 #6128
-                assertTrue("Failed test if Ingest Lock exceeds max duration " + pathToFileThatGoesThroughIngest , UtilIT.sleepForLock(datasetId, "Ingest", curatorApiToken, UtilIT.MAXIMUM_INGEST_LOCK_DURATION));
+                assertTrue(UtilIT.sleepForLock(datasetId, "Ingest", curatorApiToken, UtilIT.MAXIMUM_INGEST_LOCK_DURATION), "Failed test if Ingest Lock exceeds max duration " + pathToFileThatGoesThroughIngest);
                // Thread.sleep(10000);
             }
         }
@@ -273,12 +281,12 @@ public class InReviewWorkflowIT {
                 .statusCode(OK.getStatusCode());
         String citationCuratorNative = XmlPath.from(atomEntryCuratorNative.body().asString()).getString("bibliographicCitation");
         System.out.println("citation: " + citationCuratorNative);
-        Assert.assertTrue(citationCuratorNative.contains("newTitle"));
+        assertTrue(citationCuratorNative.contains("newTitle"));
         // END https://github.com/IQSS/dataverse/issues/4139
 
         // TODO: test where curator neglecting to leave a comment. Should fail with "reason for return" required.
         String noComments = "";
-        JsonObjectBuilder jsonObjectBuilder = Json.createObjectBuilder();
+        JsonObjectBuilder jsonObjectBuilder = JsonUtil.createObjectBuilder();
         jsonObjectBuilder.add("reasonForReturn", noComments);
         Response returnToAuthorNoComment = UtilIT.returnDatasetToAuthor(datasetPersistentId, jsonObjectBuilder.build(), curatorApiToken);
         returnToAuthorNoComment.prettyPrint();
@@ -301,16 +309,16 @@ public class InReviewWorkflowIT {
         returnToAuthorAlreadyReturned.then().assertThat()
                 .body("message", equalTo("This dataset cannot be return to the author(s) because the latest version is not In Review. The author(s) needs to click Submit for Review first."))
                 .statusCode(FORBIDDEN.getStatusCode());
-        //FIXME when/if reasons for return are returned to notifications page and the API is 
+        //FIXME when/if reasons for return are returned to notifications page and the API is
         // updated appropriately, these tests will have to be updated.
         Response authorChecksForCommentsAgain = UtilIT.getNotifications(authorApiToken);
         authorChecksForCommentsAgain.prettyPrint();
         authorChecksForCommentsAgain.then().assertThat()
-                .body("data.notifications[0].type", equalTo("RETURNEDDS"))
+                .body("data[0].type", equalTo(RETURNEDDS.toString()))
                 // The author thinks, "This why we have curators!"
-                //.body("data.notifications[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                .body("data.notifications[1].type", equalTo("CREATEACC"))
-                //.body("data.notifications[1].reasonsForReturn", equalTo(null))
+                //.body("data[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                .body("data[1].type", equalTo(CREATEACC.toString()))
+                //.body("data[1].reasonsForReturn", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         // The author upload the file she forgot.
@@ -334,14 +342,15 @@ public class InReviewWorkflowIT {
         curatorChecksNotifications.prettyPrint();
         curatorChecksNotifications.then().assertThat()
                 // TODO: Test this issue from the UI as well: https://github.com/IQSS/dataverse/issues/2526
-                .body("data.notifications[0].type", equalTo("SUBMITTEDDS"))
-                //.body("data.notifications[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                .body("data.notifications[1].type", equalTo("INGESTCOMPLETED"))
-                .body("data.notifications[2].type", equalTo("SUBMITTEDDS"))
+                .body("data[0].type", equalTo(SUBMITTEDDS.toString()))
+                //.body("data[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                .body("data[1].type", equalTo(INGESTCOMPLETED.toString()))
+                .body("data[2].type", equalTo(SUBMITTEDDS.toString()))
                 // Yes, it's a little weird that the first "SUBMITTEDDS" notification now shows the return reason when it showed nothing before. For now we are simply always showing all the reasons for return. They start to stack up. That way you can see the history.
-                //.body("data.notifications[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                .body("data.notifications[3].type", equalTo("CREATEACC"))
-                //.body("data.notifications[2].reasonsForReturn", equalTo(null))
+                //.body("data[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                .body("data[3].type", equalTo(CREATEDV.toString()))
+                .body("data[4].type", equalTo(CREATEACC.toString()))
+                //.body("data[2].reasonsForReturn", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         String reasonForReturn2 = "A README is required.";
@@ -355,15 +364,15 @@ public class InReviewWorkflowIT {
         Response authorChecksForComments3 = UtilIT.getNotifications(authorApiToken);
         authorChecksForComments3.prettyPrint();
         authorChecksForComments3.then().assertThat()
-                .body("data.notifications[0].type", equalTo("RETURNEDDS"))
-                // .body("data.notifications[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                //.body("data.notifications[0].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[1].type", equalTo("RETURNEDDS"))
+                .body("data[0].type", equalTo(RETURNEDDS.toString()))
+                // .body("data[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                //.body("data[0].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[1].type", equalTo(RETURNEDDS.toString()))
                 // Yes, it's a little weird that the reason for return on the first "RETURNEDDS" changed. We're showing the history.
-                // .body("data.notifications[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                // .body("data.notifications[1].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[2].type", equalTo("CREATEACC"))
-                // .body("data.notifications[2].reasonsForReturn", equalTo(null))
+                // .body("data[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                // .body("data[1].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[2].type", equalTo(CREATEACC.toString()))
+                // .body("data[2].reasonsForReturn", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         String pathToReadme = "README.md";
@@ -386,19 +395,20 @@ public class InReviewWorkflowIT {
         curatorHopesTheReadmeIsThereNow.prettyPrint();
         curatorHopesTheReadmeIsThereNow.then().assertThat()
                 // TODO: Test this issue from the UI as well: https://github.com/IQSS/dataverse/issues/2526
-                .body("data.notifications[0].type", equalTo("SUBMITTEDDS"))
-                // .body("data.notifications[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                // .body("data.notifications[0].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[1].type", equalTo("SUBMITTEDDS"))
-                //  .body("data.notifications[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                //   .body("data.notifications[1].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[2].type", equalTo("INGESTCOMPLETED"))
-                .body("data.notifications[3].type", equalTo("SUBMITTEDDS"))
+                .body("data[0].type", equalTo(SUBMITTEDDS.toString()))
+                // .body("data[0].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                // .body("data[0].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[1].type", equalTo(SUBMITTEDDS.toString()))
+                //  .body("data[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                //   .body("data[1].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[2].type", equalTo(INGESTCOMPLETED.toString()))
+                .body("data[3].type", equalTo(SUBMITTEDDS.toString()))
                 // Yes, it's a little weird that the first "SUBMITTEDDS" notification now shows the return reason when it showed nothing before. We're showing the history.
-                //   .body("data.notifications[2].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                //   .body("data.notifications[2].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[4].type", equalTo("CREATEACC"))
-                //   .body("data.notifications[3].reasonsForReturn", equalTo(null))
+                //   .body("data[2].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                //   .body("data[2].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[4].type", equalTo(CREATEDV.toString()))
+                .body("data[5].type", equalTo(CREATEACC.toString()))
+                //   .body("data[3].reasonsForReturn", equalTo(null))
                 .statusCode(OK.getStatusCode());
 
         // The curator publishes the dataverse.
@@ -416,16 +426,51 @@ public class InReviewWorkflowIT {
         Response authorsChecksForCommentsPostPublication = UtilIT.getNotifications(authorApiToken);
         authorsChecksForCommentsPostPublication.prettyPrint();
         authorsChecksForCommentsPostPublication.then().assertThat()
-                .body("data.notifications[0].type", equalTo("PUBLISHEDDS"))
-                .body("data.notifications[1].type", equalTo("RETURNEDDS"))
-                // .body("data.notifications[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                //  .body("data.notifications[1].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[2].type", equalTo("RETURNEDDS"))
+                .body("data[0].type", equalTo(PUBLISHEDDS.toString()))
+                .body("data[1].type", equalTo(RETURNEDDS.toString()))
+                // .body("data[1].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                //  .body("data[1].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[2].type", equalTo(RETURNEDDS.toString()))
                 // Yes, it's a little weird that the reason for return on the first "RETURNEDDS" changed. For now we are always showing the most recent reason for return.
-                //  .body("data.notifications[2].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
-                //.body("data.notifications[2].reasonsForReturn[1].message", equalTo("A README is required."))
-                .body("data.notifications[3].type", equalTo("CREATEACC"))
-                //   .body("data.notifications[3].reasonsForReturn", equalTo(null))
+                //  .body("data[2].reasonsForReturn[0].message", equalTo("You forgot to upload any files."))
+                //.body("data[2].reasonsForReturn[1].message", equalTo("A README is required."))
+                .body("data[3].type", equalTo(CREATEACC.toString()))
+                //   .body("data[3].reasonsForReturn", equalTo(null))
+                .statusCode(OK.getStatusCode());
+
+        // The author realizes she wants to add another file and creates a new draft version.
+        Response authorAddsNewFileCreatingNewDraft = UtilIT.uploadFileViaNative(datasetId.toString(), pathToFile1, authorApiToken);
+        authorAddsNewFileCreatingNewDraft.prettyPrint();
+        authorAddsNewFileCreatingNewDraft.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        // The author re-submits.
+        Response submit4 = UtilIT.submitDatasetForReview(datasetPersistentId, authorApiToken);
+        submit4.prettyPrint();
+        submit4.then().assertThat()
+                .body("data.inReview", equalTo(true))
+                .statusCode(OK.getStatusCode());
+
+        // The curator checks notifications and sees that the dataset has been re-submitted after it was published.
+        Response curatorChecksForNotificationsPostPublication = UtilIT.getNotifications(curatorApiToken);
+        curatorChecksForNotificationsPostPublication.prettyPrint();
+        curatorChecksForNotificationsPostPublication.then().assertThat()
+                .body("data[0].type", equalTo(SUBMITTEDDS.toString()))
+                .body("data[1].type", equalTo(PUBLISHEDDS.toString()))
+                .statusCode(OK.getStatusCode());
+
+        // The curator checks again, this time in app notification format.
+        Response curatorChecksForNotificationsPostPublicationInAppFormat = UtilIT.getNotifications(curatorApiToken, true, null, null, null);
+        curatorChecksForNotificationsPostPublicationInAppFormat.prettyPrint();
+        curatorChecksForNotificationsPostPublicationInAppFormat.then().assertThat()
+                .body("data[0].type", equalTo(SUBMITTEDDS.toString()))
+                .body("data[0].objectDeleted", equalTo(null))
+                .body("data[0].datasetPersistentIdentifier", equalTo(datasetPersistentId))
+                .body("data[0].ownerAlias", equalTo(dataverseAlias))
+                .body("data[1].type", equalTo(PUBLISHEDDS.toString()))
+                .body("data[1].objectDeleted", equalTo(null))
+                .body("data[1].datasetPersistentIdentifier", equalTo(datasetPersistentId))
+                .body("data[1].ownerAlias", equalTo(dataverseAlias))
                 .statusCode(OK.getStatusCode());
 
         // These println's are here in case you want to log into the GUI to see what notifications look like.
@@ -434,4 +479,60 @@ public class InReviewWorkflowIT {
 
     }
 
+    @Test
+    public void testRequireFilesToSubmitDatasetForReview() {
+        // create dataverse owner and dataset creator
+        Response superUser = UtilIT.createRandomUser();
+        superUser.prettyPrint();
+        superUser.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String username = UtilIT.getUsernameFromResponse(superUser);
+        String superUserApiToken = UtilIT.getApiTokenFromResponse(superUser);
+        Response makeSuperUserResponse = UtilIT.setSuperuserStatus(username, true);
+        makeSuperUserResponse.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        Response createCurator = UtilIT.createRandomUser();
+        createCurator.prettyPrint();
+        createCurator.then().assertThat()
+                .statusCode(OK.getStatusCode());
+        String authorUsername = UtilIT.getUsernameFromResponse(createCurator);
+        String apiToken = UtilIT.getApiTokenFromResponse(createCurator);
+
+        // Create the dataverse and set it to require files to publish and submit for review
+        Response createDataverseResponse = UtilIT.createRandomDataverse(superUserApiToken);
+        createDataverseResponse.prettyPrint();
+        createDataverseResponse.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+
+        String dataverseAlias = UtilIT.getAliasFromResponse(createDataverseResponse);
+
+        Response setDataverseAttributeResponse = UtilIT.setCollectionAttribute(dataverseAlias, "requireFilesToPublishDataset", "true", superUserApiToken);
+        setDataverseAttributeResponse.prettyPrint();
+        setDataverseAttributeResponse.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        // grant role to dataset creator to be able to create a dataset in the dataverse
+        Response grantAuthorAddDataset = UtilIT.grantRoleOnDataverse(dataverseAlias, DataverseRole.DS_CONTRIBUTOR.toString(), "@" + authorUsername, superUserApiToken);
+        grantAuthorAddDataset.prettyPrint();
+        grantAuthorAddDataset.then().assertThat()
+                .body("data.assignee", equalTo("@" + authorUsername))
+                .body("data._roleAlias", equalTo("dsContributor"))
+                .statusCode(OK.getStatusCode());
+
+        // Create a dataset with no files
+        Response createDataset = UtilIT.createRandomDatasetViaNativeApi(dataverseAlias, apiToken);
+        createDataset.prettyPrint();
+        createDataset.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+
+        String datasetPersistentId = UtilIT.getDatasetPersistentIdFromResponse(createDataset);
+
+        // Submit for review with no data files
+        Response submitForReview = UtilIT.submitDatasetForReview(datasetPersistentId, apiToken);
+        submitForReview.prettyPrint();
+        submitForReview.then().assertThat()
+                .statusCode(FORBIDDEN.getStatusCode())
+                .body("message", equalTo(BundleUtil.getStringFromBundle("dataset.mayNotSubmitForReview.FilesRequired")));
+    }
 }

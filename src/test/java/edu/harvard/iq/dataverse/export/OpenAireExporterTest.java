@@ -1,22 +1,22 @@
 package edu.harvard.iq.dataverse.export;
 
-import com.jayway.restassured.path.xml.XmlPath;
-import edu.harvard.iq.dataverse.DatasetVersion;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.path.xml.XmlPath;
 import edu.harvard.iq.dataverse.util.xml.XmlPrinter;
+import edu.harvard.iq.dataverse.util.xml.XmlUtil;
+import io.gdcc.spi.export.ExportDataProvider;
+import io.gdcc.spi.export.XMLExporter;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.InputStream;
-import java.io.StringReader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
+import jakarta.json.JsonObject;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import static junit.framework.Assert.assertEquals;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -29,6 +29,7 @@ public class OpenAireExporterTest {
     public OpenAireExporterTest() {
         openAireExporter = new OpenAireExporter();
     }
+    
 
     /**
      * Test of getProviderName method, of class OpenAireExporter.
@@ -38,7 +39,7 @@ public class OpenAireExporterTest {
         System.out.println("getProviderName");
         OpenAireExporter instance = new OpenAireExporter();
         String expResult = "oai_datacite";
-        String result = instance.getProviderName();
+        String result = instance.getFormatName();
         assertEquals(expResult, result);
     }
 
@@ -50,7 +51,7 @@ public class OpenAireExporterTest {
         System.out.println("getDisplayName");
         OpenAireExporter instance = new OpenAireExporter();
         String expResult = "OpenAIRE";
-        String result = instance.getDisplayName();
+        String result = instance.getDisplayName(null);
         assertEquals(expResult, result);
     }
 
@@ -60,13 +61,13 @@ public class OpenAireExporterTest {
     @Test
     public void testExportDataset() throws Exception {
         System.out.println("exportDataset");
-        File datasetVersionJson = new File("src/test/java/edu/harvard/iq/dataverse/export/dataset-spruce1.json");
-        String datasetVersionAsJson = new String(Files.readAllBytes(Paths.get(datasetVersionJson.getAbsolutePath())));
-        JsonReader jsonReader = Json.createReader(new StringReader(datasetVersionAsJson));
-        JsonObject jsonObject = jsonReader.readObject();
-        DatasetVersion nullVersion = null;
+        JsonObject jsonObject = JsonUtil.getJsonObjectFromFile("src/test/java/edu/harvard/iq/dataverse/export/dataset-spruce1.json");
+        
+        ExportDataProvider exportDataProviderStub = Mockito.mock(ExportDataProvider.class);
+        Mockito.when(exportDataProviderStub.getDatasetJson()).thenReturn(jsonObject);
+        
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        openAireExporter.exportDataset(nullVersion, jsonObject, byteArrayOutputStream);
+        openAireExporter.exportDataset(exportDataProviderStub, byteArrayOutputStream);
         String xmlOnOneLine = new String(byteArrayOutputStream.toByteArray());
         String xmlAsString = XmlPrinter.prettyPrintXml(xmlOnOneLine);
         System.out.println("XML: " + xmlAsString);
@@ -82,13 +83,13 @@ public class OpenAireExporterTest {
     @Test
     public void testValidateExportDataset() throws Exception {
         System.out.println("validateExportDataset");
-        File datasetVersionJson = new File("src/test/java/edu/harvard/iq/dataverse/export/dataset-all-defaults.txt");
-        String datasetVersionAsJson = new String(Files.readAllBytes(Paths.get(datasetVersionJson.getAbsolutePath())));
-        JsonReader jsonReader = Json.createReader(new StringReader(datasetVersionAsJson));
-        JsonObject jsonObject = jsonReader.readObject();
-        DatasetVersion nullVersion = null;
+        JsonObject jsonObject = JsonUtil.getJsonObjectFromFile("src/test/java/edu/harvard/iq/dataverse/export/dataset-all-defaults.txt");
+        
+        ExportDataProvider exportDataProviderStub = Mockito.mock(ExportDataProvider.class);
+        Mockito.when(exportDataProviderStub.getDatasetJson()).thenReturn(jsonObject);
+        
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        openAireExporter.exportDataset(nullVersion, jsonObject, byteArrayOutputStream);
+        openAireExporter.exportDataset(exportDataProviderStub, byteArrayOutputStream);
 
         {
             String xmlOnOneLine = new String(byteArrayOutputStream.toByteArray());
@@ -96,8 +97,8 @@ public class OpenAireExporterTest {
             System.out.println("XML: " + xmlAsString);
         }
         InputStream xmlStream = new ByteArrayInputStream(byteArrayOutputStream.toByteArray());
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setValidating(true);
+        DocumentBuilderFactory factory = XmlUtil.getSecureDocumentBuilderFactory();
+        //factory.setValidating(true);
         factory.setNamespaceAware(true);
         factory.setAttribute("http://java.sun.com/xml/jaxp/properties/schemaLanguage",
                 "http://www.w3.org/2001/XMLSchema");
@@ -120,14 +121,14 @@ public class OpenAireExporterTest {
     }
 
     /**
-     * Test of isXMLFormat method, of class OpenAireExporter.
+     * Test that OpenAireExporter is an XMLExporter
      */
     @Test
     public void testIsXMLFormat() {
         System.out.println("isXMLFormat");
         OpenAireExporter instance = new OpenAireExporter();
         Boolean expResult = true;
-        Boolean result = instance.isXMLFormat();
+        Boolean result = instance instanceof XMLExporter;
         assertEquals(expResult, result);
     }
 

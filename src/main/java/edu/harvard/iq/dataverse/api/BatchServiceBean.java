@@ -14,12 +14,14 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.Asynchronous;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObjectBuilder;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.ejb.Asynchronous;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObjectBuilder;
 
 /**
  * EJB for kicking off big batch jobs asynchronously from the REST API  (BatchImport.java)
@@ -41,13 +43,13 @@ public class BatchServiceBean {
         PrintWriter validationLog = null;
         PrintWriter cleanupLog = null;
         try {
-        JsonArrayBuilder status = Json.createArrayBuilder();
+        JsonArrayBuilder status = JsonUtil.createArrayBuilder();
         Date timestamp = new Date();
         
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss");
         
-        validationLog = new PrintWriter(new FileWriter( "../logs/validationLog"+  formatter.format(timestamp)+".txt"));
-        cleanupLog = new PrintWriter(new FileWriter( "../logs/cleanupLog"+  formatter.format(timestamp)+".txt"));
+        validationLog = new PrintWriter(new FileWriter( System.getProperty("com.sun.aas.instanceRoot") + File.separator + "logs" + File.separator + "validationLog"+  formatter.format(timestamp)+".txt"));
+        cleanupLog = new PrintWriter(new FileWriter( System.getProperty("com.sun.aas.instanceRoot") + File.separator + "logs" + File.separator + "cleanupLog"+  formatter.format(timestamp)+".txt"));
         File dir = new File(fileDir);
         if (dir.isDirectory()) {
             for (File file : dir.listFiles()) {
@@ -84,7 +86,7 @@ public class BatchServiceBean {
     }
 
     public JsonArrayBuilder handleDirectory(DataverseRequest dataverseRequest, File dir, ImportUtil.ImportType importType, PrintWriter validationLog, PrintWriter cleanupLog, Boolean createDV) throws ImportException{
-        JsonArrayBuilder status = Json.createArrayBuilder();
+        JsonArrayBuilder status = JsonUtil.createArrayBuilder();
         Dataverse owner = dataverseService.findByAlias(dir.getName());
         if (owner == null ) {
             if (createDV) {
@@ -100,7 +102,7 @@ public class BatchServiceBean {
                     JsonObjectBuilder fileStatus = importService.handleFile(dataverseRequest, owner, file, importType, validationLog, cleanupLog);
                     status.add(fileStatus);
                 } catch (ImportException | IOException e) {
-                    status.add(Json.createObjectBuilder().add("importStatus", "Exception importing " + file.getName() + ", message = " + e.getMessage()));
+                    status.add(JsonUtil.createObjectBuilder().add("importStatus", "Exception importing " + file.getName() + ", message = " + e.getMessage()));
                 }
             }
         }

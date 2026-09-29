@@ -9,30 +9,29 @@ import edu.harvard.iq.dataverse.authorization.CredentialsAuthenticationProvider;
 import edu.harvard.iq.dataverse.authorization.exceptions.AuthenticationFailedException;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUserServiceBean;
-import edu.harvard.iq.dataverse.authorization.providers.shib.ShibAuthenticationProvider;
+import edu.harvard.iq.dataverse.authorization.providers.shib.ShibServiceBean;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.settings.FeatureFlags;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
-import edu.harvard.iq.dataverse.util.SessionUtil;
 
-import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
 import edu.harvard.iq.dataverse.util.SystemConfig;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.component.UIComponent;
-import javax.faces.context.FacesContext;
-import javax.faces.event.AjaxBehaviorEvent;
-import javax.faces.validator.ValidatorException;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.component.UIComponent;
+import jakarta.faces.context.FacesContext;
+import jakarta.faces.event.AjaxBehaviorEvent;
+import jakarta.faces.validator.ValidatorException;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  *
@@ -95,6 +94,9 @@ public class LoginPage implements java.io.Serializable {
     @EJB
     SystemConfig systemConfig;
     
+    @EJB
+    ShibServiceBean shibService;
+    
     @Inject
     DataverseRequestServiceBean dvRequestService;
     
@@ -141,7 +143,7 @@ public class LoginPage implements java.io.Serializable {
         Collections.sort(idps, Comparator.comparing(AuthenticationProvider::getOrder).thenComparing(AuthenticationProvider::getId));
         
         for (AuthenticationProvider idp : idps) {
-            if (idp != null) {
+            if (idp != null && !idp.isHidden()) {
                 infos.add(idp.getInfo());
             }
         }
@@ -257,6 +259,37 @@ public class LoginPage implements java.io.Serializable {
     public void setRedirectPage(String redirectPage) {
         this.redirectPage = redirectPage;
     }
+    
+    /*
+     * Starting v6.7 the default Shibboleth login mechanism is to use the new 
+     * Wayfinder service from InCommon. We no longer use the javascript from the 
+     * idp package to generate the list of participating institutions and then 
+     * generate the redirect url to the auth. service they choose. Under the new 
+     * model the user is redirected to InCommon and the workflow of picking 
+     * their institutional auth. service provider will be handled there. 
+     */
+    public String getShibWayfinderRedirect() {
+        String wayFinderUrl = shibService.getWayfinderRedirectUrl();
+        logger.fine("wayfinder url provided by the shib service: " + wayFinderUrl);
+        // In order to produce a complete url, we need to add the final redirect
+        // parameter (this will be the FOURTH redirect in the shib. authentication
+        // loop), the redirectPage= pointing to the final destination Dataverse 
+        // page. Note the corresponding multiple-level URL encoding involved.
+        String finalRedirectUrl = wayFinderUrl 
+                + "%253FredirectPage%253D" 
+                + getRedirectPage().replaceAll("/", "%25252F").replaceAll("=", "%25253D").replaceAll("\\?", "%25253F").replaceAll("&", "%252526");
+        logger.fine("final redirect url: " + finalRedirectUrl);
+        return finalRedirectUrl;
+    }
+    
+    /* 
+     * An instance that uses Shibboleth as part of InCommon can switch to using
+     * the new login workflow that relies on WayFinder and MDQ. 
+     */ 
+    public boolean isShibbolethUseWayFinder() {
+        return FeatureFlags.SHIBBOLETH_USE_WAYFINDER.enabled();
+    }
+
 
     public AuthenticationProvider getAuthProvider() {
         return authProvider;

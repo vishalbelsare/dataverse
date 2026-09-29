@@ -1,68 +1,264 @@
 package edu.harvard.iq.dataverse.api;
 
 import edu.harvard.iq.dataverse.UserNotification;
-import edu.harvard.iq.dataverse.UserNotification.Type;
+import edu.harvard.iq.dataverse.api.auth.AuthRequired;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
-import edu.harvard.iq.dataverse.authorization.users.User;
-import edu.harvard.iq.dataverse.workflows.WorkflowUtil;
-import java.util.List;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObjectBuilder;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.core.Response;
-import edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder;
-import static edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder.jsonObjectBuilder;
-import javax.json.JsonValue;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.ejb.Stateless;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Response;
+
+import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
+import static edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder.jsonObjectBuilder;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
+@Stateless
 @Path("notifications")
+@Tag(name = "Notifications", description = "User notification lookup and notification preference operations.")
 public class Notifications extends AbstractApiBean {
 
     @GET
-    @Path("all")
-    public Response getAllNotificationsForUser() {
-        User user;
+    @AuthRequired
+    @Path("/all")
+    @Operation(summary = "Lists user notifications",
+            description = "Returns notifications for the authenticated user with optional unread filtering, formatting, and pagination.")
+    public Response getAllNotificationsForUser(@Context ContainerRequestContext crc,
+                                               @Parameter(description = "Limit results to unread notifications.")
+                                               @QueryParam("onlyUnread") boolean onlyUnread,
+                                               @Parameter(description = "Format notifications for in-app display.")
+                                               @QueryParam("inAppNotificationFormat") boolean inAppNotificationFormat,
+                                               @Parameter(description = "Maximum number of notifications to return.")
+                                               @QueryParam("limit") Integer limit,
+                                               @Parameter(description = "Number of notifications to skip before returning results.")
+                                               @QueryParam("offset") Integer offset) {
         try {
-            user = findUserOrDie();
-        } catch (WrappedResponse ex) {
-            return error(Response.Status.UNAUTHORIZED, "You must supply an API token.");
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            List<UserNotification> userNotifications = userNotificationSvc.findByUser(authenticatedUser.getId(), onlyUnread, limit, offset);
+            long userNotificationTotalCount = userNotificationSvc.findTotalCountByUser(authenticatedUser.getId(), onlyUnread);
+            return ok(json(userNotifications, authenticatedUser, inAppNotificationFormat), userNotificationTotalCount);
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
         }
-        if (user == null) {
-            return error(Response.Status.BAD_REQUEST, "A user could not be found based on the API token.");
+    }
+
+    @GET
+    @AuthRequired
+    @Path("/unreadCount")
+    @Operation(summary = "Returns unread notification count",
+            description = "Returns the number of unread notifications for the authenticated user.")
+    public Response getUnreadNotificationsCountForUser(@Context ContainerRequestContext crc) {
+        try {
+            AuthenticatedUser au = getRequestAuthenticatedUserOrDie(crc);
+            long unreadCount = userNotificationSvc.getUnreadNotificationCountByUser(au.getId());
+            return ok(JsonUtil.createObjectBuilder()
+                    .add("unreadCount", unreadCount));
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
         }
-        if (!(user instanceof AuthenticatedUser)) {
-            // It's unlikely we'll reach this error. A Guest doesn't have an API token and would have been blocked above.
-            return error(Response.Status.BAD_REQUEST, "Only an AuthenticatedUser can have notifications.");
-        }
-        AuthenticatedUser authenticatedUser = (AuthenticatedUser) user;
-        JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
-        List<UserNotification> notifications = userNotificationSvc.findByUser(authenticatedUser.getId());
-        for (UserNotification notification : notifications) {
-            NullSafeJsonBuilder notificationObjectBuilder = jsonObjectBuilder();
-            JsonArrayBuilder reasonsForReturn = Json.createArrayBuilder();
-            Type type = notification.getType();
-            notificationObjectBuilder.add("id", notification.getId());
-            notificationObjectBuilder.add("type", type.toString());
-            /* FIXME - Re-add reasons for return if/when they are added to the notifications page.
-            
-            if (Type.RETURNEDDS.equals(type) || Type.SUBMITTEDDS.equals(type)) {
-                JsonArrayBuilder reasons = getReasonsForReturn(notification);
-                for (JsonValue reason : reasons.build()) {
-                    reasonsForReturn.add(reason);
+    }
+
+    @PUT
+    @AuthRequired
+    @Path("/{id}/markAsRead")
+    @Operation(summary = "Marks a notification as read",
+            description = "Marks one notification as read when it belongs to the authenticated user.")
+    public Response markNotificationAsReadForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification id to mark as read.", required = true)
+            @PathParam("id") long id) {
+        try {
+            AuthenticatedUser au = getRequestAuthenticatedUserOrDie(crc);
+            Long userId = au.getId();
+            Optional<UserNotification> notification = userNotificationSvc.findByUser(userId).stream().filter(x -> x.getId().equals(id)).findFirst();
+            if (notification.isPresent()) {
+                UserNotification saved = userNotificationSvc.markAsRead(notification.get());
+                if (saved.isReadNotification()) {
+                    return ok("Notification " + id + " marked as read.");
+                } else {
+                    return badRequest("Notification " + id + " could not be marked as read.");
                 }
-                notificationObjectBuilder.add("reasonsForReturn", reasonsForReturn);
+            } else {
+                return notFound("Notification " + id + " not found.");
             }
-            */
-            jsonArrayBuilder.add(notificationObjectBuilder);
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
         }
-        JsonObjectBuilder result = Json.createObjectBuilder().add("notifications", jsonArrayBuilder);
-        return ok(result);
     }
 
-    private JsonArrayBuilder getReasonsForReturn(UserNotification notification) {
-        Long objectId = notification.getObjectId();
-        return WorkflowUtil.getAllWorkflowComments(datasetVersionSvc.find(objectId));
+    @DELETE
+    @AuthRequired
+    @Path("/{id}")
+    @Operation(summary = "Deletes a notification",
+            description = "Deletes one notification when it belongs to the authenticated user.")
+    public Response deleteNotificationForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification id to delete.", required = true)
+            @PathParam("id") long id) {
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            Long userId = authenticatedUser.getId();
+            Optional<UserNotification> notification = userNotificationSvc.findByUser(userId).stream().filter(x -> x.getId().equals(id)).findFirst();
+
+            if (notification.isPresent()) {
+                userNotificationSvc.delete(notification.get());
+                return ok("Notification " + id + " deleted.");
+            }
+
+            return notFound("Notification " + id + " not found.");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
     }
 
+    @GET
+    @AuthRequired
+    @Path("/mutedEmails")
+    @Operation(summary = "Lists muted notification emails",
+            description = "Returns notification types whose emails are muted for the authenticated user.")
+    public Response getMutedEmailsForUser(@Context ContainerRequestContext crc) {
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            JsonArrayBuilder mutedEmails = JsonUtil.createArrayBuilder();
+            authenticatedUser.getMutedEmails().stream().forEach(
+                    x -> mutedEmails.add(jsonObjectBuilder().add("name", x.name()).add("description", x.getDescription()))
+            );
+            JsonObjectBuilder result = JsonUtil.createObjectBuilder().add("mutedEmails", mutedEmails);
+            return ok(result);
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @PUT
+    @AuthRequired
+    @Path("/mutedEmails/{typeName}")
+    @Operation(summary = "Mutes notification emails",
+            description = "Adds the specified notification type to the authenticated user's muted email preferences.")
+    public Response muteEmailsForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification type name whose emails are muted.", required = true)
+            @PathParam("typeName") String typeName) {
+        UserNotification.Type notificationType;
+        try {
+            notificationType = UserNotification.Type.valueOf(typeName);
+        } catch (Exception ignore) {
+            return notFound("Notification type " + typeName + " not found.");
+        }
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            Set<UserNotification.Type> mutedEmails = authenticatedUser.getMutedEmails();
+            mutedEmails.add(notificationType);
+            authenticatedUser.setMutedEmails(mutedEmails);
+            authSvc.update(authenticatedUser);
+            return ok("Notification emails of type " + typeName + " muted.");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @DELETE
+    @AuthRequired
+    @Path("/mutedEmails/{typeName}")
+    @Operation(summary = "Unmutes notification emails",
+            description = "Removes the specified notification type from the authenticated user's muted email preferences.")
+    public Response unmuteEmailsForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification type name whose emails are unmuted.", required = true)
+            @PathParam("typeName") String typeName) {
+        UserNotification.Type notificationType;
+        try {
+            notificationType = UserNotification.Type.valueOf(typeName);
+        } catch (Exception ignore) {
+            return notFound("Notification type " + typeName + " not found.");
+        }
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            Set<UserNotification.Type> mutedEmails = authenticatedUser.getMutedEmails();
+            mutedEmails.remove(notificationType);
+            authenticatedUser.setMutedEmails(mutedEmails);
+            authSvc.update(authenticatedUser);
+            return ok("Notification emails of type " + typeName + " unmuted.");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @GET
+    @AuthRequired
+    @Path("/mutedNotifications")
+    @Operation(summary = "Lists muted in-app notifications",
+            description = "Returns notification types whose in-app notifications are muted for the authenticated user.")
+    public Response getMutedNotificationsForUser(@Context ContainerRequestContext crc) {
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            JsonArrayBuilder mutedNotifications = JsonUtil.createArrayBuilder();
+            authenticatedUser.getMutedNotifications().stream().forEach(
+                    x -> mutedNotifications.add(jsonObjectBuilder().add("name", x.name()).add("description", x.getDescription()))
+            );
+            JsonObjectBuilder result = JsonUtil.createObjectBuilder().add("mutedNotifications", mutedNotifications);
+            return ok(result);
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @PUT
+    @AuthRequired
+    @Path("/mutedNotifications/{typeName}")
+    @Operation(summary = "Mutes in-app notifications",
+            description = "Adds the specified notification type to the authenticated user's muted in-app notification preferences.")
+    public Response muteNotificationsForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification type name whose in-app notifications are muted.", required = true)
+            @PathParam("typeName") String typeName) {
+        UserNotification.Type notificationType;
+        try {
+            notificationType = UserNotification.Type.valueOf(typeName);
+        } catch (Exception ignore) {
+            return notFound("Notification type " + typeName + " not found.");
+        }
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            Set<UserNotification.Type> mutedNotifications = authenticatedUser.getMutedNotifications();
+            mutedNotifications.add(notificationType);
+            authenticatedUser.setMutedNotifications(mutedNotifications);
+            authSvc.update(authenticatedUser);
+            return ok("Notification of type " + typeName + " muted.");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @DELETE
+    @AuthRequired
+    @Path("/mutedNotifications/{typeName}")
+    @Operation(summary = "Unmutes in-app notifications",
+            description = "Removes the specified notification type from the authenticated user's muted in-app notification preferences.")
+    public Response unmuteNotificationsForUser(@Context ContainerRequestContext crc,
+            @Parameter(description = "Notification type name whose in-app notifications are unmuted.", required = true)
+            @PathParam("typeName") String typeName) {
+        UserNotification.Type notificationType;
+        try {
+            notificationType = UserNotification.Type.valueOf(typeName);
+        } catch (Exception ignore) {
+            return notFound("Notification type " + typeName + " not found.");
+        }
+        try {
+            AuthenticatedUser authenticatedUser = getRequestAuthenticatedUserOrDie(crc);
+            Set<UserNotification.Type> mutedNotifications = authenticatedUser.getMutedNotifications();
+            mutedNotifications.remove(notificationType);
+            authenticatedUser.setMutedNotifications(mutedNotifications);
+            authSvc.update(authenticatedUser);
+            return ok("Notification of type " + typeName + " unmuted.");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
 }

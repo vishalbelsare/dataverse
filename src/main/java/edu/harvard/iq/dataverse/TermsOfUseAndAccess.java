@@ -6,16 +6,39 @@
 package edu.harvard.iq.dataverse;
 
 import java.io.Serializable;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.OneToOne;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Transient;
 
 import edu.harvard.iq.dataverse.license.License;
+import jakarta.persistence.NamedQueries;
+import jakarta.persistence.NamedQuery;
+
+@NamedQueries({
+    // TermsOfUseAndAccess.findByDatasetVersionIdAndDefaultTerms 
+    // is used to determine if the dataset terms were set by the multi license support update 
+    // as part of the 5.10 release.
+    
+    @NamedQuery(name = "TermsOfUseAndAccess.findByDatasetVersionIdAndDefaultTerms", 
+                query = "SELECT o FROM TermsOfUseAndAccess o, DatasetVersion dv WHERE "
+                        + "dv.id =:id "
+                        + "AND dv.termsOfUseAndAccess.id = o.id "
+                        + "AND o.termsOfUse =:defaultTerms "
+                        + "AND o.confidentialityDeclaration IS null " 
+                        + "AND o.specialPermissions IS null "
+                        + "AND o.restrictions IS null "
+                        + "AND o.citationRequirements IS null "
+                        + "AND o.depositorRequirements IS null "
+                        + "AND o.conditions IS null "
+                        + "AND o.disclaimer IS null "
+    )
+})
 
 /**
  *
@@ -23,7 +46,10 @@ import edu.harvard.iq.dataverse.license.License;
  * @author skraffmi
  */
 @Entity
+@ValidateTermsOfUseAndAccess
 public class TermsOfUseAndAccess implements Serializable {
+    
+    public static final String DEFAULT_NOTERMS = "This dataset is made available without information on how it can be used. You should communicate with the Contact(s) specified before use.";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -125,6 +151,7 @@ public class TermsOfUseAndAccess implements Serializable {
     public void setLicense(License license) {
         this.license = license;
         if(license!=null) {
+            //Enforce restriction that customTerms can't be used with a license
             clearCustomTermsVariables();
         }
     }
@@ -135,6 +162,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setTermsOfUse(String termsOfUse) {
         this.termsOfUse = termsOfUse;
+        if (termsOfUse != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getTermsOfAccess() {
@@ -151,6 +182,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setConfidentialityDeclaration(String confidentialityDeclaration) {
         this.confidentialityDeclaration = confidentialityDeclaration;
+        if (confidentialityDeclaration != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getSpecialPermissions() {
@@ -159,6 +194,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setSpecialPermissions(String specialPermissions) {
         this.specialPermissions = specialPermissions;
+        if (specialPermissions != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getRestrictions() {
@@ -167,6 +206,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setRestrictions(String restrictions) {
         this.restrictions = restrictions;
+        if (restrictions != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getCitationRequirements() {
@@ -175,6 +218,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setCitationRequirements(String citationRequirements) {
         this.citationRequirements = citationRequirements;
+        if (citationRequirements != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getDepositorRequirements() {
@@ -183,6 +230,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setDepositorRequirements(String depositorRequirements) {
         this.depositorRequirements = depositorRequirements;
+        if (depositorRequirements != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getConditions() {
@@ -191,6 +242,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setConditions(String conditions) {
         this.conditions = conditions;
+        if (conditions != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getDisclaimer() {
@@ -199,6 +254,10 @@ public class TermsOfUseAndAccess implements Serializable {
 
     public void setDisclaimer(String disclaimer) {
         this.disclaimer = disclaimer;
+        if (disclaimer != null) {
+            //Enforce restriction that customTerms can't be used with a license
+            this.license = null;
+        }
     }
 
     public String getDataAccessPlace() {
@@ -287,11 +346,17 @@ public class TermsOfUseAndAccess implements Serializable {
         disclaimer = null;
     }
     
-    /**
-     * @todo What does the GUI use for a default license? What does the "native"
-     * API use? See also https://github.com/IQSS/dataverse/issues/1385
-     */
+    @Transient
+    private String validationMessage;
 
+    public String getValidationMessage() {
+        return validationMessage;
+    }
+
+    public void setValidationMessage(String validationMessage) {
+        this.validationMessage = validationMessage;
+    }
+    
     @Override
     public int hashCode() {
         int hash = 0;

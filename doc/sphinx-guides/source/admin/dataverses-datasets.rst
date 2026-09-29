@@ -15,7 +15,7 @@ Dataverse collections have to be empty to delete them. Navigate to the Dataverse
 Move a Dataverse Collection
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Moves a Dataverse collection whose id is passed to a new Dataverse collection whose id is passed. The Dataverse collection alias also may be used instead of the id. If the moved Dataverse collection has a guestbook, template, metadata block, link, or featured Dataverse collection that is not compatible with the destination Dataverse collection, you will be informed and given the option to force the move and remove the association. Only accessible to superusers. ::
+Moves a Dataverse collection whose id is passed to an existing Dataverse collection whose id is passed. The Dataverse collection alias also may be used instead of the id. If the moved Dataverse collection has a guestbook, template, metadata block, link, or featured Dataverse collection that is not compatible with the destination Dataverse collection, you will be informed and given the option to force the move and remove the association. Only accessible to superusers. ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/dataverses/$id/move/$destination-id
 
@@ -50,21 +50,31 @@ Recursively assigns the users and groups having a role(s),that are in the set co
 Configure a Dataverse Collection to Store All New Files in a Specific File Store
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To direct new files (uploaded when datasets are created or edited) for all datasets in a given Dataverse collection, the store can be specified via the API as shown below, or by editing the 'General Information' for a Dataverse collection on the Dataverse collection page. Only accessible to superusers. ::
+To direct new files (uploaded when datasets are created or edited) for all datasets in a given Dataverse collection, the store can be specified via the API as shown below, or by editing the 'General Information' for a Dataverse collection on the Dataverse collection page. Requires permission to edit the Dataverse collection (for example, the ``EditDataverse`` permission). ::
  
-    curl -H "X-Dataverse-key: $API_TOKEN" -X PUT -d $storageDriverLabel http://$SERVER/api/admin/dataverse/$dataverse-alias/storageDriver
+    curl -H "X-Dataverse-key: $API_TOKEN" -X PUT -d $storageDriverLabel http://$SERVER/api/dataverses/$dataverse-alias/storageDriver
+
+(Note that for ``dataverse.files.store1.label=MyLabel``, you should pass ``MyLabel``.)
     
-The current driver can be seen using::
+A store assigned directly to a collection can be seen using::
 
-    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/admin/dataverse/$dataverse-alias/storageDriver
+    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/dataverses/$dataverse-alias/storageDriver
 
-and can be reset to the default store with::
+This may be null. To get the effective storageDriver for a collection, which may be inherited from a parent collection or be the installation default, you can use:: 
 
-    curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE http://$SERVER/api/admin/dataverse/$dataverse-alias/storageDriver
+    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/dataverses/$dataverse-alias/storageDriver?getEffective=true
     
-The available drivers can be listed with::
+This will never be null.
 
-    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/admin/dataverse/storageDrivers
+(Note that for ``dataverse.files.store1.label=MyLabel``, the JSON response will include "name":"store1" and "label":"MyLabel".)
+
+To delete a store assigned directly to a collection (so that the colllection's effective store is inherted from it's parent or is the global default), use::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE http://$SERVER/api/dataverses/$dataverse-alias/storageDriver
+    
+The available drivers within a collection can be listed with::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/dataverses/$dataverse-alias/allowedStorageDrivers
     
 (Individual datasets can be configured to use specific file stores as well. See the "Datasets" section below.)
 
@@ -99,6 +109,69 @@ If the :AllowedCurationLabels setting has a value, one of the available choices 
     
 Individual datasets can be configured to use specific curationLabelSets as well. See the "Datasets" section below.
 
+.. _review-datasets-setup:
+
+Configure a Collection for Review Datasets
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:ref:`review-datasets-user` are a specialized type of dataset that can be used to review resources (such as datasets) in the Dataverse installation itself or resources in external data repositories.
+
+Review datasets require some setup, as described below.
+
+Load the Review Metadata Block
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+First, download the Review metadata block tsv file from :ref:`experimental-metadata`.
+
+Then, load the block and update Solr. See the following sections of :doc:`metadatacustomization` for details:
+
+- :ref:`load-tsv`
+- :ref:`update-solr-schema`
+
+Create and Enable Custom "Rubric" Metadata Blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Review metadata block gives you a few basic fields common to all reviews such as the URL of the item being reviewed.
+
+You probably will want to create your own metadata blocks specific to the resources you are reviewing, your own "rubric". See :doc:`metadatacustomization` for details on creating and enabling custom metadata blocks.
+
+Instead of creating a new custom metadata block from scratch (if you simply want to evaluate the feature, for example), in a test environment, you can use the "Trusted Data Dimensions and Intensities" for testing. (A test environment is advised because metadata blocks cannot be deleted once they are loaded (https://github.com/IQSS/dataverse/issues/9628).) These are the files to download:
+
+- :download:`rubric_trusteddatadimensionsintensities.tsv <../../../../scripts/api/data/metadatablocks/rubric_trusteddatadimensionsintensities.tsv>`
+- :download:`rubric_trusteddatadimensionsintensities.properties <../../../../src/main/java/propertyFiles/rubric_trusteddatadimensionsintensities.properties>` (optional)
+
+After loading the block, don't forget to update the Solr schema!
+
+As in the example above, the metadata block must start with ``rubric_`` (the "metadataBlock name" in the tsv itself) to be included in the output of the :ref:`api-list-reviews` API endpoint.
+
+Create a Review Dataset Type
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Review datasets are built on the :ref:`dataset-types` feature. Dataset types can only be created via API so follow the steps under :ref:`api-add-dataset-type`. Copy and paste from below or download :download:`review.json <../../../../scripts/api/data/datasetTypes/review.json>` and pass it to the API.
+
+.. literalinclude:: ../../../../scripts/api/data/datasetTypes/review.json
+   :language: json
+
+Create a Collection for Reviews and Configure Permissions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Follow the normal steps:
+
+- :ref:`create-dataverse`.
+- :ref:`dataverse-permissions`.
+
+Allow the Review Dataset Type for the Collection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Non-dataset types, such as the "review" type, are only available when a collection admin has enabled them, via API.
+
+Using the API :ref:`collection-attributes-api`, change the ``allowedDatasetTypes`` attribute so that it includes "review". If you only want to allow reviews, you can pass just ``review``. If you want to allow multiple dataset types, you can pass a comma-separated list, such as ``review,dataset``.
+
+Invite Users to Create Review Datasets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+At this point, users should be able to create review datasets via API, if you gave them permission on the collection. You can point them to :ref:`creating-a-review-dataset` for details.
+
 Datasets
 --------
 
@@ -107,21 +180,51 @@ Move a Dataset
 
 Superusers can move datasets using the dashboard. See also :doc:`dashboard`.
 
-Moves a dataset whose id is passed to a Dataverse collection whose alias is passed. If the moved dataset has a guestbook or a Dataverse collection link that is not compatible with the destination Dataverse collection, you will be informed and given the option to force the move (with ``forceMove=true`` as a query parameter) and remove the guestbook or link (or both). Only accessible to users with permission to publish the dataset in the original and destination Dataverse collection. ::
+Moves a dataset whose id is passed to a Dataverse collection whose alias is passed. If the moved dataset has a guestbook or a Dataverse collection link that is not compatible with the destination Dataverse collection, you will be informed and given the option to force the move (with ``forceMove=true`` as a query parameter) and remove the guestbook or link (or both). Only accessible to users with permission to publish the dataset in the original and destination Dataverse collection. Note: any roles granted to users on the dataset will continue to be in effect after the dataset has been moved. ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/datasets/$id/move/$alias
 
 Link a Dataset
 ^^^^^^^^^^^^^^
 
-Creates a link between a dataset and a Dataverse collection (see the :ref:`dataset-linking` section of the User Guide for more information). ::
+Creates a link between a dataset and a Dataverse collection (see the :ref:`dataset-linking` section of the User Guide for more information). Accessible to users with Link Dataset permission on the Dataverse collection. ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X PUT http://$SERVER/api/datasets/$linked-dataset-id/link/$linking-dataverse-alias
+
+.. _list-collections-linked-from-dataset:
+
+List Collections that are Linked from a Dataset
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Lists the link(s) created between a dataset and a Dataverse collection (see the :ref:`dataset-linking` section of the User Guide for more information). ::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" http://$SERVER/api/datasets/$linked-dataset-id/links
+
+It returns a list in the following format (new format as of v6.4):
+
+.. code-block:: json
+
+  {
+    "status": "OK",
+    "data": {
+      "id": 5,
+      "identifier": "FK2/OTCWMM",
+      "linked-dataverses": [
+        {
+          "id": 2,
+          "alias": "dataverse1",
+          "displayName": "Lab experiments 2023 June"
+        }
+      ]
+    }
+  }
+
+.. _unlink-a-dataset:
 
 Unlink a Dataset
 ^^^^^^^^^^^^^^^^
 
-Removes a link between a dataset and a Dataverse collection. Only accessible to superusers. ::
+Removes a link between a dataset and a Dataverse collection. Accessible to users with Link Dataset permission on the Dataverse collection. ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE http://$SERVER/api/datasets/$linked-dataset-id/deleteLink/$linking-dataverse-alias
 
@@ -131,14 +234,34 @@ Mint a PID for a File That Does Not Have One
 In the following example, the database id of the file is 42::
 
     export FILE_ID=42
-    curl http://localhost:8080/api/admin/$FILE_ID/registerDataFile
+    curl "http://localhost:8080/api/admin/$FILE_ID/registerDataFile"
+    
+This method will return a FORBIDDEN response if minting of file PIDs is not enabled for the collection the file is in. (Note that it is possible to have file PIDs enabled for a specific collection, even when it is disabled for the Dataverse installation as a whole. See :ref:`collection-attributes-api` in the Native API Guide.)
 
-Mint PIDs for Files That Do Not Have Them
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Mint PIDs for all unregistered published files in the specified collection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you have a large number of files, you might want to consider miniting PIDs for files individually using the ``registerDataFile`` endpoint above in a for loop, sleeping between each registration::
+The following API will register the PIDs for all the yet unregistered published files in the datasets **directly within the collection** specified by its alias::
+
+    curl "http://localhost:8080/api/admin/registerDataFiles/{collection_alias}"
+
+It will not attempt to register the datafiles in its sub-collections, so this call will need to be repeated on any sub-collections where files need to be registered as well.
+File-level PID registration must be enabled on the collection. (Note that it is possible to have it enabled for a specific collection, even when it is disabled for the Dataverse installation as a whole. See :ref:`collection-attributes-api` in the Native API Guide.)
+
+This API will sleep for 1 second between registration calls by default. A longer sleep interval can be specified with an optional ``sleep=`` parameter::
+
+      curl "http://localhost:8080/api/admin/registerDataFiles/{collection_alias}?sleep=5"
+
+Mint PIDs for ALL unregistered files in the database
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The following API will attempt to register the PIDs for all the published files in your instance, in collections that allow file PIDs, that do not yet have them::
 
     curl http://localhost:8080/api/admin/registerDataFileAll
+
+The application will attempt to sleep for 1 second between registration attempts as not to overload your persistent identifier service provider. Note that if you have a large number of files that need to be registered in your Dataverse, you may want to consider minting file PIDs within indivdual collections, or even for individual files using the ``registerDataFiles`` and/or ``registerDataFile`` endpoints above in a loop, with a longer sleep interval between calls.
+
+
 
 Mint a New DOI for a Dataset with a Handle
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -149,12 +272,41 @@ Mints a new identifier for a dataset previously registered with a handle. Only a
     
 .. _send-metadata-to-pid-provider:
 
-Send Dataset metadata to PID provider
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Update Target URL for a Published Dataset at the PID provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forces update to metadata provided to the PID provider of a published dataset. Only accessible to superusers. ::
+Forces update to the target URL provided to the PID provider of a published dataset and assures the PID is findable.
+Only accessible to superusers. ::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/datasets/$dataset-id/modifyRegistration
+    
+Update Target URL for all Published Datasets at the PID provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Forces update to the target URL provided to the PID provider of all published datasets and assures the PID is findable.
+Only accessible to superusers. ::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/datasets/modifyRegistrationAll
+    
+Update Metadata for a Published Dataset at the PID provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Checks to see that the PID metadata for a published dataset (and any released files in it using file PIDs)
+is up-to-date at the provider and updates the metadata if necessary.
+Only accessible to superusers. ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/datasets/$dataset-id/modifyRegistrationMetadata
+    
+Update Metadata for all Published Datasets at the PID provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Checks to see that the PID metadata is up-to-date at the provider for all published datasets
+(and any released files in them using file PIDs) and updates the metadata if necessary.
+Only accessible to superusers. ::
+
+    curl -H "X-Dataverse-key: $API_TOKEN" -X POST http://$SERVER/api/datasets/modifyRegistrationPIDMetadataAll
+    
+The call returns 200/OK as long as the call completes. Any errors for individual datasets are reported in the log.
 
 Check for Unreserved PIDs and Reserve Them
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -174,15 +326,17 @@ To identify invalid data values in specific datasets (if, for example, an attemp
 Configure a Dataset to Store All New Files in a Specific File Store
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Configure a dataset to use a specific file store (this API can only be used by a superuser) ::
+Configure an individual dataset to use a specific file store (this API can only be used by a superuser) ::
  
     curl -H "X-Dataverse-key: $API_TOKEN" -X PUT -d $storageDriverLabel http://$SERVER/api/datasets/$dataset-id/storageDriver
     
-The current driver can be seen using::
+The effective store can be seen using::
 
     curl http://$SERVER/api/datasets/$dataset-id/storageDriver
 
-It can be reset to the default store as follows (only a superuser can do this) ::
+The output of the API will include the id, label, type (for example, "file" or "s3") as well as the support for direct download and upload.
+
+To remove an assigned store, and allow the dataset to inherit the store from it's parent collection, use the following (only a superuser can do this) ::
 
     curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE http://$SERVER/api/datasets/$dataset-id/storageDriver
     

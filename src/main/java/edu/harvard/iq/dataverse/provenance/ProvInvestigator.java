@@ -5,12 +5,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import edu.harvard.iq.dataverse.api.AbstractApiBean;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
-import javax.json.JsonObject;
+import jakarta.json.JsonObject;
+import java.util.Optional;
 import org.everit.json.schema.Schema;
 import org.everit.json.schema.ValidationException;
 import org.everit.json.schema.loader.SchemaLoader;
@@ -114,18 +115,18 @@ public class ProvInvestigator {
         return gson.toJson(je);
     }
 
-    public boolean isProvValid(String jsonInput) {
+    public Optional<String> optionalProvValidationMessage(String jsonInput) {
         try { 
             schema.validate(new JSONObject(jsonInput)); // throws a ValidationException if this object is invalid
         } catch (ValidationException vx) {
             logger.info("Prov schema error : " + vx); //without classLoader is blows up in actual deployment
-            return false;
+            return Optional.of(vx.getAllMessages().toString());
         } catch (Exception ex) {
             logger.info("Prov file error : " + ex);
-            return false;
+            return Optional.of(ex.getMessage());
         } 
 
-        return true;
+        return Optional.empty();
     }
     
     //Pulled from https://www.w3.org/Submission/2013/SUBM-prov-json-20130424/schema

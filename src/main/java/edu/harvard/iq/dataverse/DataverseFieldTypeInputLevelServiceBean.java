@@ -7,13 +7,13 @@ package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.util.LruCache;
 import java.util.List;
-import java.util.logging.Logger;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.NoResultException;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
+
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 
 /**
  *
@@ -88,13 +88,23 @@ public class DataverseFieldTypeInputLevelServiceBean {
             return null;
         }         
     }
+    
+    public List<DataverseFieldTypeInputLevel> findRequiredByDataverseId(Long dataverseId) {
+        Query query = em.createNamedQuery("DataverseFieldTypeInputLevel.findRequiredByDataverseId", DataverseFieldTypeInputLevel.class);
+        query.setParameter("dataverseId", dataverseId);
+        try{
+            return query.getResultList();
+        } catch ( NoResultException nre ) {
+            return null;
+        }         
+    }
 
     public void delete(DataverseFieldTypeInputLevel dataverseFieldTypeInputLevel) {
         em.remove(em.merge(dataverseFieldTypeInputLevel));
         cache.invalidate();
     }
 
-    public void deleteFacetsFor(Dataverse d) {
+    public void deleteDataverseFieldTypeInputLevelFor(Dataverse d) {
         em.createNamedQuery("DataverseFieldTypeInputLevel.removeByOwnerId")
                 .setParameter("ownerId", d.getId())
                 .executeUpdate();
@@ -105,6 +115,15 @@ public class DataverseFieldTypeInputLevelServiceBean {
     public void create(DataverseFieldTypeInputLevel dataverseFieldTypeInputLevel) {
 
         em.persist(dataverseFieldTypeInputLevel);
+    }
+
+    public DataverseFieldTypeInputLevel save(DataverseFieldTypeInputLevel inputLevel) {
+        if (inputLevel.getId() == null) {
+            em.persist(inputLevel);
+            return inputLevel;
+        } else {
+            return em.merge(inputLevel);
+        }
     }
 
 }

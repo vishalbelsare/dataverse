@@ -3,11 +3,13 @@ package edu.harvard.iq.dataverse.api.dto;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
 import edu.harvard.iq.dataverse.authorization.Permission;
 import java.util.EnumSet;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  *
  * @author michael
  */
+@Schema(description = "Dataverse role definition payload with alias, display name, description, owner, and permissions.")
 public class RoleDTO {
 	String alias;
 	String name;
@@ -47,11 +49,11 @@ public class RoleDTO {
 		this.permissions = permissions;
 	}
 
-	public DataverseRole asRole() {
-		DataverseRole r = new DataverseRole();
+	public DataverseRole updateRoleFromDTO(DataverseRole r) {
 		r.setAlias(alias);
 		r.setDescription(description);
 		r.setName(name);
+		r.clearPermissions();
 		if (permissions != null) {
 			if (permissions.length > 0) {
 				if (permissions[0].trim().toLowerCase().equals("all")) {
@@ -64,6 +66,10 @@ public class RoleDTO {
 			}
 		}
 		return r;
+	}
+
+	public DataverseRole asRole() {
+		return updateRoleFromDTO(new DataverseRole());
 	}
 	
 }

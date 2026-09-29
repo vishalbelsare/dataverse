@@ -1,11 +1,15 @@
 package edu.harvard.iq.dataverse.util;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.logging.Logger;
 
+import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetVersion;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.impl.AbstractSubmitToArchiveCommand;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 
 /**
  * Simple class to reflectively get an instance of the desired class for
@@ -35,4 +39,48 @@ public class ArchiverUtil {
         }
         return null;
     }
+    
+    public static boolean onlySingleVersionArchiving(Class<? extends AbstractSubmitToArchiveCommand> clazz, SettingsServiceBean settingsService) {
+        Method m;
+        try {
+            m = clazz.getMethod("isSingleVersion", SettingsServiceBean.class);
+            Object[] params = { settingsService };
+            return (Boolean) m.invoke(null, params);
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        return (AbstractSubmitToArchiveCommand.isSingleVersion(settingsService));
+    }
+
+    public static boolean isSomeVersionArchived(Dataset dataset) {
+        boolean someVersionArchived = false;
+        for (DatasetVersion dv : dataset.getVersions()) {
+            if (dv.getArchivalCopyLocation() != null) {
+                someVersionArchived = true;
+                break;
+            }
+        }
+
+        return someVersionArchived;
+    }
+    
+    /**
+     * Checks if a version has been successfully archived.
+     * 
+     * @param version the version to check
+     * @return true if the version has been successfully archived, false otherwise
+     */
+    public static boolean isVersionArchived(DatasetVersion version) {
+        String status = version.getArchivalCopyLocationStatus();
+        return status != null && status.equals(DatasetVersion.ARCHIVAL_STATUS_SUCCESS);
+    }
+
 }

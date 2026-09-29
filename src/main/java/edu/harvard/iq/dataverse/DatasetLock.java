@@ -20,25 +20,25 @@
 
 package edu.harvard.iq.dataverse;
 
-import static edu.harvard.iq.dataverse.DatasetLock.Reason.Workflow;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import java.util.Date;
 import java.io.Serializable;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Index;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.Table;
-import javax.persistence.Temporal;
-import javax.persistence.TemporalType;
-import javax.persistence.NamedQueries;
-import javax.persistence.NamedQuery;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Temporal;
+import jakarta.persistence.TemporalType;
+import jakarta.persistence.NamedQueries;
+import jakarta.persistence.NamedQuery;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  *
@@ -51,14 +51,21 @@ import javax.persistence.NamedQuery;
 @Entity
 @Table(indexes = {@Index(columnList="user_id"), @Index(columnList="dataset_id")})
 @NamedQueries({
+    @NamedQuery(name = "DatasetLock.findAll",
+            query="SELECT lock FROM DatasetLock lock ORDER BY lock.id"),
     @NamedQuery(name = "DatasetLock.getLocksByDatasetId",
             query = "SELECT lock FROM DatasetLock lock WHERE lock.dataset.id=:datasetId"),
-            @NamedQuery(name = "DatasetLock.getLocksByAuthenticatedUserId",
-            query = "SELECT lock FROM DatasetLock lock WHERE lock.user.id=:authenticatedUserId")
+    @NamedQuery(name = "DatasetLock.getLocksByType",
+            query = "SELECT lock FROM DatasetLock lock WHERE lock.reason=:lockType ORDER BY lock.id"),
+    @NamedQuery(name = "DatasetLock.getLocksByAuthenticatedUserId",
+            query = "SELECT lock FROM DatasetLock lock WHERE lock.user.id=:authenticatedUserId  ORDER BY lock.id"),
+    @NamedQuery(name = "DatasetLock.getLocksByTypeAndAuthenticatedUserId",
+            query = "SELECT lock FROM DatasetLock lock WHERE lock.reason=:lockType AND lock.user.id=:authenticatedUserId  ORDER BY lock.id")
 }
 )
 public class DatasetLock implements Serializable {
     
+    @Schema(description = "Dataset lock reason indicating why dataset editing or publication is blocked.")
     public enum Reason {
         /** Data being ingested *//** Data being ingested */
         Ingest,
@@ -71,7 +78,10 @@ public class DatasetLock implements Serializable {
         
         /** DCM (rsync) upload in progress */
         DcmUpload,
-        
+
+        /** Globus upload in progress */
+        GlobusUpload,
+
         /** Tasks handled by FinalizeDatasetPublicationCommand:
          Registering PIDs for DS and DFs and/or file validation */
         finalizePublication,

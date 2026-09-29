@@ -6,15 +6,18 @@
 package edu.harvard.iq.dataverse.harvest.client;
 
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Date;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.Temporal;
-import javax.persistence.TemporalType;
+
+import edu.harvard.iq.dataverse.util.BundleUtil;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Temporal;
+import jakarta.persistence.TemporalType;
 
 /**
  *
@@ -40,12 +43,7 @@ public class ClientHarvestRun implements Serializable {
         this.id = id;
     }
 
-    public enum RunResultType { SUCCESS, FAILURE, INPROGRESS };
-    
-    private static String RESULT_LABEL_SUCCESS = "SUCCESS";
-    private static String RESULT_LABEL_FAILURE = "FAILED";
-    private static String RESULT_LABEL_INPROGRESS = "IN PROGRESS";
-    private static String RESULT_DELETE_IN_PROGRESS = "DELETE IN PROGRESS";
+    public enum RunResultType { COMPLETED, COMPLETED_WITH_FAILURES, FAILURE, IN_PROGRESS, INTERRUPTED }
     
     @ManyToOne
     @JoinColumn(nullable = false)
@@ -67,34 +65,43 @@ public class ClientHarvestRun implements Serializable {
     
     public String getResultLabel() {
         if (harvestingClient != null && harvestingClient.isDeleteInProgress()) {
-            return RESULT_DELETE_IN_PROGRESS;
+            return BundleUtil.getStringFromBundle("harvestclients.result.deleteInProgress");
         }
-        
-        if (isSuccess()) {
-            return RESULT_LABEL_SUCCESS;
+
+        if (isCompleted()) {
+            return BundleUtil.getStringFromBundle("harvestclients.result.completed");
+        } else if (isCompletedWithFailures()) {
+            return BundleUtil.getStringFromBundle("harvestclients.result.completedWithFailures");
         } else if (isFailed()) {
-            return RESULT_LABEL_FAILURE;
+            return BundleUtil.getStringFromBundle("harvestclients.result.failure");
         } else if (isInProgress()) {
-            return RESULT_LABEL_INPROGRESS;
+            return BundleUtil.getStringFromBundle("harvestclients.result.inProgess");
+        } else if (isInterrupted()) {
+            return BundleUtil.getStringFromBundle("harvestclients.result.interrupted");
         }
         return null;
     }
     
     public String getDetailedResultLabel() {
         if (harvestingClient != null && harvestingClient.isDeleteInProgress()) {
-            return RESULT_DELETE_IN_PROGRESS;
+            return BundleUtil.getStringFromBundle("harvestclients.result.deleteInProgress");
         }
-        if (isSuccess()) {
-            String resultLabel = RESULT_LABEL_SUCCESS;
-            
-            resultLabel = resultLabel.concat("; "+harvestedDatasetCount+" harvested, ");
-            resultLabel = resultLabel.concat(deletedDatasetCount+" deleted, ");
-            resultLabel = resultLabel.concat(failedDatasetCount+" failed.");
+        if (isCompleted() || isCompletedWithFailures() || isInterrupted()) {
+            String resultLabel = getResultLabel();
+
+            String details = BundleUtil.getStringFromBundle("harvestclients.result.details", Arrays.asList(
+                    harvestedDatasetCount.toString(),
+                    deletedDatasetCount.toString(),
+                    failedDatasetCount.toString()
+            ));
+            if(details != null) {
+                resultLabel = resultLabel + "; " + details;
+            }
             return resultLabel;
         } else if (isFailed()) {
-            return RESULT_LABEL_FAILURE;
+            return BundleUtil.getStringFromBundle("harvestclients.result.failure");
         } else if (isInProgress()) {
-            return RESULT_LABEL_INPROGRESS;
+            return BundleUtil.getStringFromBundle("harvestclients.result.inProgess");
         }
         return null;
     }
@@ -103,12 +110,20 @@ public class ClientHarvestRun implements Serializable {
         this.harvestResult = harvestResult;
     }
 
-    public boolean isSuccess() {
-        return RunResultType.SUCCESS == harvestResult;
+    public boolean isCompleted() {
+        return RunResultType.COMPLETED == harvestResult;
     }
 
-    public void setSuccess() {
-        harvestResult = RunResultType.SUCCESS;
+    public void setCompleted() {
+        harvestResult = RunResultType.COMPLETED;
+    }
+
+    public boolean isCompletedWithFailures() {
+        return RunResultType.COMPLETED_WITH_FAILURES == harvestResult;
+    }
+
+    public void setCompletedWithFailures() {
+        harvestResult = RunResultType.COMPLETED_WITH_FAILURES;
     }
 
     public boolean isFailed() {
@@ -120,14 +135,22 @@ public class ClientHarvestRun implements Serializable {
     }
     
     public boolean isInProgress() {
-        return RunResultType.INPROGRESS == harvestResult ||
+        return RunResultType.IN_PROGRESS == harvestResult ||
                 (harvestResult == null && startTime != null && finishTime == null);
     }
     
     public void setInProgress() {
-        harvestResult = RunResultType.INPROGRESS;
+        harvestResult = RunResultType.IN_PROGRESS;
     }
 
+    public boolean isInterrupted() {
+        return RunResultType.INTERRUPTED == harvestResult;
+    }
+    
+    public void setInterrupted() {
+        harvestResult = RunResultType.INTERRUPTED;
+    }
+    
     // Time of this harvest attempt:
     @Temporal(value = TemporalType.TIMESTAMP)
     private Date startTime;

@@ -2,10 +2,11 @@ package edu.harvard.iq.dataverse.util;
 
 import edu.harvard.iq.dataverse.DataverseServiceBean;
 import edu.harvard.iq.dataverse.UserNotification;
+import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.branding.BrandingUtil;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -14,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 
 @ExtendWith(MockitoExtension.class)
 @TestMethodOrder(OrderAnnotation.class)
@@ -27,12 +28,13 @@ public class MailUtilTest {
     @Mock
     SettingsServiceBean settingsSvc;
     
-    @Before
+    @BeforeEach
     public void setUp() {
         userNotification = new UserNotification();
 
     }
 
+    /*
     @Test
     public void testParseSystemAddress() {
         assertEquals("support@librascholar.edu", MailUtil.parseSystemAddress("support@librascholar.edu").getAddress());
@@ -46,6 +48,7 @@ public class MailUtilTest {
         assertEquals(null, MailUtil.parseSystemAddress("\"LibraScholar Support Team <support@librascholar.edu>"));
         assertEquals(null, MailUtil.parseSystemAddress("support1@dataverse.org, support@librascholar.edu"));
     }
+    */
 
     @Test
     @Order(1)
@@ -80,7 +83,12 @@ public class MailUtilTest {
     @Test
     public void testSubjectRequestFileAccess() {
         userNotification.setType(UserNotification.Type.REQUESTFILEACCESS);
-        assertEquals("LibraScholar: Access has been requested for a restricted file", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
+        AuthenticatedUser requestor = new AuthenticatedUser();
+        requestor.setFirstName("Tom");
+        requestor.setLastName("Jones");
+        requestor.setUserIdentifier("TJ-1234");
+        userNotification.setRequestor(requestor);
+        assertEquals("LibraScholar: Tom Jones (@TJ-1234) requested access to dataset \"\"", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
     }
     
     @Test
@@ -98,25 +106,25 @@ public class MailUtilTest {
     @Test
     public void testSubjectCreateDataset() {
         userNotification.setType(UserNotification.Type.CREATEDS);
-        assertEquals("LibraScholar: Your dataset has been created", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
+        assertEquals("LibraScholar: Dataset \"\" has been created", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
     }
     
     @Test
     public void testSubjectSubmittedDS() {
         userNotification.setType(UserNotification.Type.SUBMITTEDDS);
-        assertEquals("LibraScholar: Your dataset has been submitted for review", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
+        assertEquals("LibraScholar: Dataset \"\" has been submitted for review", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
     }
     
     @Test
     public void testSubjectPublishedDS() {
         userNotification.setType(UserNotification.Type.PUBLISHEDDS);
-        assertEquals("LibraScholar: Your dataset has been published", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
+        assertEquals("LibraScholar: Dataset \"\" has been published", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
     }
     
     @Test
     public void testSubjectReturnedDS() {
         userNotification.setType(UserNotification.Type.RETURNEDDS);
-        assertEquals("LibraScholar: Your dataset has been returned", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
+        assertEquals("LibraScholar: Dataset \"\" has been returned", MailUtil.getSubjectTextBasedOnNotification(userNotification, null));
     }
     
     @Test

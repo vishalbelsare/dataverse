@@ -35,7 +35,13 @@ Configure the tool with the curl command below, making sure to replace the ``fab
 
 .. code-block:: bash
 
-  curl -X POST -H 'Content-type: application/json' http://localhost:8080/api/admin/externalTools --upload-file fabulousFileTool.json 
+  curl -X POST -H 'Content-type: application/json' http://localhost:8080/api/admin/externalTools --upload-file fabulousFileTool.json
+
+This API is Superuser only. Note the endpoint difference (/api/externalTools instead of /api/admin/externalTools).
+
+.. code-block:: bash
+
+  curl -s -H "X-Dataverse-key:$API_TOKEN" -X POST -H 'Content-type: application/json' http://localhost:8080/api/externalTools --upload-file fabulousFileTool.json
 
 Listing All External Tools in a Dataverse Installation
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -45,6 +51,12 @@ To list all the external tools that are available in a Dataverse installation:
 .. code-block:: bash
 
   curl http://localhost:8080/api/admin/externalTools
+
+This API is open to any user. Note the endpoint difference (/api/externalTools instead of /api/admin/externalTools).
+
+.. code-block:: bash
+
+  curl http://localhost:8080/api/externalTools
 
 Showing an External Tool in a Dataverse Installation
 ++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -56,6 +68,12 @@ To show one of the external tools that are available in a Dataverse installation
   export TOOL_ID=1
   curl http://localhost:8080/api/admin/externalTools/$TOOL_ID
 
+This API is open to any user. Note the endpoint difference (/api/externalTools instead of /api/admin/externalTools).
+
+.. code-block:: bash
+
+  curl http://localhost:8080/api/externalTools/$TOOL_ID
+
 Removing an External Tool From a Dataverse Installation
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -65,6 +83,12 @@ Assuming the external tool database id is "1", remove it with the following comm
 
   export TOOL_ID=1
   curl -X DELETE http://localhost:8080/api/admin/externalTools/$TOOL_ID
+
+This API is Superuser only. Note the endpoint difference (/api/externalTools instead of /api/admin/externalTools).
+
+.. code-block:: bash
+
+  curl -s -H "X-Dataverse-key:$API_TOKEN" -X DELETE http://localhost:8080/api/externalTools/$TOOL_ID
 
 .. _testing-external-tools:
 
@@ -92,7 +116,15 @@ File Level Preview Tools
 
 File level preview tools allow the user to see a preview of the file contents without having to download it.
 
-When a file has a preview available, a preview icon will appear next to that file in the file listing on the dataset page. On the file page itself, the preview will appear in a Preview tab either immediately or once a guestbook has been filled in or terms, if any, have been agreed to.
+When a file has a preview available, a preview icon will appear next to that file in the file listing on the dataset page. On the file page itself, the preview will appear in a Preview tab (renamed File Tools, if multiple tools are available) either immediately or once a guestbook has been filled in or terms, if any, have been agreed to.
+
+File Level Query Tools
+++++++++++++++++++++++++
+
+File level query tools allow the user to ask questions (e.g. natural language queries) of a data table's contents without having to download it.
+
+When a file has a query tool available, a query icon will appear next to that file in the file listing on the dataset page. On the file page itself, the query tool will appear in a Query tab (renamed File Tools, if multiple tools are available) either immediately or once a guestbook has been filled in or terms, if any, have been agreed to.
+
 
 File Level Configure Tools
 ++++++++++++++++++++++++++
@@ -107,7 +139,7 @@ Dataset level explore tools allow the user to explore all the files in a dataset
 Dataset Level Configure Tools
 +++++++++++++++++++++++++++++
 
-Configure tools at the dataset level are not currently supported.
+Dataset level configure tools can be launched by users who have edit access to the dataset. These tools are found under the "Edit Dataset" menu.
 
 Writing Your Own External Tool
 ------------------------------

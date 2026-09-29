@@ -33,14 +33,14 @@ import java.util.ArrayList;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.io.OutputStream;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.ejb.EJB;
-import javax.ejb.EJBException;
-import javax.ejb.TransactionAttribute;
-import javax.ejb.TransactionAttributeType;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.ejb.EJB;
+import jakarta.ejb.EJBException;
+import jakarta.ejb.TransactionAttribute;
+import jakarta.ejb.TransactionAttributeType;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import javax.xml.stream.XMLStreamWriter;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLOutputFactory;
@@ -78,12 +78,6 @@ public class DDIExportServiceBean {
     private EntityManager em;
 
     /*
-     * Constants used by the worker methods:
-     */
-    private static final String OBJECT_TAG_VARIABLE = "variable";
-    private static final String OBJECT_TAG_DATAFILE = "datafile";
-    private static final String OBJECT_TAG_DATASET = "dataset";
-    /*
      * Database and schema-specific constants:
      * Needless to say, we should *not* be defining these here - it should
      * all live in the database somewhere/somehow.
@@ -98,14 +92,17 @@ public class DDIExportServiceBean {
     public static final String LEVEL_FILE = "file";
     public static final String NOTE_TYPE_UNF = "VDC:UNF";
     public static final String NOTE_TYPE_TAG = "DATAVERSE:TAG";
+    public static final String NOTE_TYPE_FILEDESCRIPTION = "DATAVERSE:FILEDESC";
     public static final String NOTE_SUBJECT_UNF = "Universal Numeric Fingerprint";
     public static final String NOTE_SUBJECT_TAG = "Data File Tag";
+    public static final String NOTE_SUBJECT_FILEDESCRIPTION = "DataFile Description"; 
 
     /*
      * Internal service objects:
      */
     private XMLOutputFactory xmlOutputFactory = null;
 
+    // Called by container
     public void ejbCreate() {
         // initialize lists/service classes:
 
@@ -113,38 +110,7 @@ public class DDIExportServiceBean {
     }
 
     @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
-    public void exportDataVariable(Long varId, OutputStream os, String partialExclude, String partialInclude, Long fileMetadataId) {
-
-        export(OBJECT_TAG_VARIABLE, varId, os, partialExclude, partialInclude, fileMetadataId);
-    }
-
-    @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
-    public void exportDataset(Long datasetId, OutputStream os, String partialExclude, String partialInclude) {
-        export(OBJECT_TAG_DATASET, datasetId, os, partialExclude, partialInclude, null);
-
-    }
-
-    @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
-    public void exportDataFile(Long varId, OutputStream os, String partialExclude, String partialInclude, Long fileMetadataId) {
-        export(OBJECT_TAG_DATAFILE, varId, os, partialExclude, partialInclude, fileMetadataId);
-
-    }
-
-    /*
-     * Workhorse methods, that do all the work: 
-     */
-    private void export(String objectTag, Long objectId, OutputStream os, String partialExclude, String partialInclude, Long fileMetadataId) {
-
-        /*
-         * Some checks will need to be here, to see if the corresponding dataset
-         * is released, if all the permissions are satisfied, etc., with 
-         * approrpiate exceptions thrown otherwise. 
-         *
-         *      something like
-        
-         throw new IllegalArgumentException("ExportStudy called with a null study.");
-         throw new IllegalArgumentException("Study does not have released version, study.id = " + s.getId());
-         */
+    public void exportDataFile(DataFile df, OutputStream os, String partialExclude, String partialInclude, FileMetadata fm) {
         Set<String> includedFieldSet = null;
         Set<String> excludedFieldSet = null;
         
@@ -178,42 +144,15 @@ public class DDIExportServiceBean {
         XMLStreamWriter xmlw = null;
 
         // Try to resolve the supplied object id: 
-        Object dataObject = null;
-
-        if (OBJECT_TAG_VARIABLE.equals(objectTag)) {
-            dataObject = variableService.find(objectId);
-            if (dataObject == null) {
-                throw new IllegalArgumentException("Metadata Export: Invalid variable id supplied.");
-            }
-        } else if (OBJECT_TAG_DATAFILE.equals(objectTag)) {
-            dataObject = fileService.find(objectId);
-            if (dataObject == null) {
-                throw new IllegalArgumentException("Metadata Export: Invalid datafile id supplied.");
-            }
-        } else if (OBJECT_TAG_DATASET.equals(objectTag)) {
-            dataObject = datasetService.find(objectId);
-            if (dataObject == null) {
-                throw new IllegalArgumentException("Metadata Export: Invalid dataset id supplied.");
-            }
-            releasedVersion = ((Dataset)dataObject).getReleasedVersion();
-            if (releasedVersion == null) {
-                throw new IllegalArgumentException("Metadata Export: Dataset not released.");
-            }
-        } else {
-            throw new IllegalArgumentException("Metadata Export: Unsupported export requested.");
+        if (df == null) {
+            throw new IllegalArgumentException("Metadata Export: dataObject is null.");
         }
 
         try {
             xmlw = xmlOutputFactory.createXMLStreamWriter(os);
             xmlw.writeStartDocument();
 
-            if (OBJECT_TAG_VARIABLE.equals(objectTag)) {
-                createVarDDI(xmlw, excludedFieldSet, includedFieldSet, (DataVariable) dataObject, fileMetadataId);
-            } else if (OBJECT_TAG_DATAFILE.equals(objectTag)) {
-                createDataFileDDI(xmlw, excludedFieldSet, includedFieldSet, (DataFile) dataObject, fileMetadataId);
-            } else if (OBJECT_TAG_DATASET.equals(objectTag)) {
-                createDatasetDDI(xmlw, excludedFieldSet, includedFieldSet, releasedVersion);
-            }
+            createDataFileDDI(xmlw, excludedFieldSet, includedFieldSet, df, fm);
 
             xmlw.writeEndDocument();
         } catch (XMLStreamException ex) {
@@ -250,16 +189,21 @@ public class DDIExportServiceBean {
         xmlw.writeEndElement(); //varGrp
     }
 
-    private void createVarDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, DataVariable dv, Long fileMetadataId) throws XMLStreamException {
+    private void createVarDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, DataVariable dv, FileMetadata fm) throws XMLStreamException {
         xmlw.writeStartElement("var");
         writeAttribute(xmlw, "ID", "v" + dv.getId().toString());
         writeAttribute(xmlw, "name", dv.getName());
 
-        if (fileMetadataId == null) {
-            fileMetadataId = dv.getDataTable().getDataFile().getFileMetadata().getId();
+        if (fm == null) {
+            fm = dv.getDataTable().getDataFile().getFileMetadata();
+        } else {
+            // Validate that fileMetadata belongs to the DataFile associated with this variable
+            if (!fm.getDataFile().equals(dv.getDataTable().getDataFile())) {
+                throw new IllegalArgumentException("Metadata Export: Invalid fileMetadata supplied for the variable.");
+            }
         }
 
-        List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(dv.getId(), fileMetadataId);
+        List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(dv.getId(), fm.getId());
         VariableMetadata vm = null;
         if (vmList != null && vmList.size() >0) {
             vm = vmList.get(0);
@@ -431,7 +375,7 @@ public class DDIExportServiceBean {
                     writeAttribute(xmlw, "type", "freq");
                     // if frequency is actually a long value, we want to write "100" instead of "100.0"
                     if (Math.floor(cat.getFrequency()) == cat.getFrequency()) {
-                        xmlw.writeCharacters(new Long(cat.getFrequency().longValue()).toString());
+                        xmlw.writeCharacters(Long.valueOf(cat.getFrequency().longValue()).toString());
                     } else {
                         xmlw.writeCharacters(cat.getFrequency().toString());
                     }
@@ -495,7 +439,7 @@ public class DDIExportServiceBean {
 
     }
 
-    private void createDataFileDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, DataFile df, Long fileMetadataId) throws XMLStreamException {
+    private void createDataFileDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, DataFile df, FileMetadata fm) throws XMLStreamException {
         /* This method will create both the <fileDscr> and <dataDscr><var> 
          * portions of the DDI that describe the tabular data contained in 
          * the file, the file-, datatable- and variable-level metadata; or 
@@ -514,12 +458,13 @@ public class DDIExportServiceBean {
         writeAttribute(xmlw, "version", "2.0");
 
 
-        FileMetadata latestFm = df.getFileMetadata();
-        if (fileMetadataId == null) {
-            fileMetadataId = latestFm.getId();
+        if (fm == null) {
+            fm = df.getFileMetadata();
+        } else {
+            if (!fm.getDataFile().equals(df)) {
+                throw new IllegalArgumentException("Metadata Export: Invalid fileMetadata supplied for the datafile.");
+            }
         }
-
-        FileMetadata fm = fileService.findFileMetadata(fileMetadataId);
 
         createStdyDscr(xmlw, excludedFieldSet, includedFieldSet, fm.getDatasetVersion());
         
@@ -534,7 +479,7 @@ public class DDIExportServiceBean {
 
         if (checkField("varGrp", excludedFieldSet, includedFieldSet)) {
 
-            List<VarGroup> varGroups = variableService.findAllGroupsByFileMetadata(fileMetadataId);
+            List<VarGroup> varGroups = variableService.findAllGroupsByFileMetadata(fm.getId());
 
             for (VarGroup varGrp : varGroups) {
                 createVarGroupDDI(xmlw, excludedFieldSet, null, varGrp);
@@ -545,12 +490,22 @@ public class DDIExportServiceBean {
             List<DataVariable> vars = variableService.findByDataTableId(dt.getId());
             if (checkField("catgry", excludedFieldSet, includedFieldSet)) {
                 if (checkIsWithoutFrequencies(vars)) {
+                    // @todo: the method called here to calculate frequencies 
+                    // when they are missing from the database (for whatever
+                    // reasons) subsets the physical tab-delimited file and 
+                    // calculates them in real time. this is very expensive operation
+                    // potentially. let's make sure that, when we do this, we 
+                    // save the resulting frequencies in the database, so that 
+                    // we don't have to do this again. Also, let's double check 
+                    // whether the "checkIsWithoutFrequencies()" method is doing
+                    // the right thing - as it appears to return true when there 
+                    // are no categorical variables in the DataTable (?)
                     calculateFrequencies(df, vars);
                 }
             }
 
             for (DataVariable var : vars) {
-                createVarDDI(xmlw, excludedFieldSet, null, var, fileMetadataId);
+                createVarDDI(xmlw, excludedFieldSet, null, var, fm);
             }
         }
 
@@ -580,6 +535,7 @@ public class DDIExportServiceBean {
 
     private void calculateFrequencies(DataFile df, List<DataVariable> vars)
     {
+        // @todo: see the comment in the part of the code that calls this method
         try {
             DataConverter dc = new DataConverter();
             File tabFile = dc.downloadFromStorageIO(df.getStorageIO());
@@ -641,7 +597,7 @@ public class DDIExportServiceBean {
                 }
 
                 for (DataVariable var : vars) { 
-                    createVarDDI(xmlw, excludedFieldSet, null, var, fileMetadata.getId());
+                    createVarDDI(xmlw, excludedFieldSet, null, var, fileMetadata);
                 }
             }
             
@@ -731,11 +687,6 @@ public class DDIExportServiceBean {
                 xmlw.writeEndElement(); // fileName
             }
 
-            /*
-             xmlw.writeStartElement("fileCont");
-             xmlw.writeCharacters( df.getContentType() );
-             xmlw.writeEndElement(); // fileCont
-             */
             // dimensions
             if (checkField("dimensns", excludedFieldSet, includedFieldSet)) {
                 if (dt.getCaseQuantity() != null || dt.getVarQuantity() != null || dt.getRecordsPerCase() != null) {
@@ -790,26 +741,6 @@ public class DDIExportServiceBean {
             xmlw.writeEndElement(); // notes
         }
 
-        /*
-         xmlw.writeStartElement("notes");
-         writeAttribute( xmlw, "type", "vdc:category" );
-         xmlw.writeCharacters( fm.getCategory() );
-         xmlw.writeEndElement(); // notes
-         */
-        // A special note for LOCKSS crawlers indicating the restricted
-        // status of the file:
-
-        /*
-         if (tdf != null && isRestrictedFile(tdf)) {
-         xmlw.writeStartElement("notes");
-         writeAttribute( xmlw, "type", NOTE_TYPE_LOCKSS_CRAWL );
-         writeAttribute( xmlw, "level", LEVEL_FILE );
-         writeAttribute( xmlw, "subject", NOTE_SUBJECT_LOCKSS_PERM );
-         xmlw.writeCharacters( "restricted" );
-         xmlw.writeEndElement(); // notes
-
-         }
-         */
         if (checkField("tags", excludedFieldSet, includedFieldSet) && df.getTags() != null) {
             for (int i = 0; i < df.getTags().size(); i++) {
                 xmlw.writeStartElement("notes");
@@ -820,6 +751,17 @@ public class DDIExportServiceBean {
                 xmlw.writeEndElement(); // notes
             }
         }
+        
+        // A dedicated node for the Description entry 
+        if (!StringUtilisEmpty(fm.getDescription())) {
+            xmlw.writeStartElement("notes");
+            xmlw.writeAttribute("level", LEVEL_FILE);
+            xmlw.writeAttribute("type", NOTE_TYPE_FILEDESCRIPTION);
+            xmlw.writeAttribute("subject", NOTE_SUBJECT_FILEDESCRIPTION);
+            xmlw.writeCharacters(fm.getDescription());
+            xmlw.writeEndElement(); // notes
+        }
+        
         xmlw.writeEndElement(); // fileDscr   
     }
 

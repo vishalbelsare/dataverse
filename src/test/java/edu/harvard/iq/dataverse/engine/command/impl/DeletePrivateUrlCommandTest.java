@@ -8,15 +8,17 @@ import edu.harvard.iq.dataverse.authorization.RoleAssignee;
 import edu.harvard.iq.dataverse.authorization.users.PrivateUrlUser;
 import edu.harvard.iq.dataverse.engine.TestCommandContext;
 import edu.harvard.iq.dataverse.engine.TestDataverseEngine;
+import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.privateurl.PrivateUrl;
 import edu.harvard.iq.dataverse.privateurl.PrivateUrlServiceBean;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DeletePrivateUrlCommandTest {
 
@@ -25,7 +27,7 @@ public class DeletePrivateUrlCommandTest {
     private final Long noPrivateUrlToDelete = 1l;
     private final Long hasPrivateUrlToDelete = 2l;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         testEngine = new TestDataverseEngine(new TestCommandContext() {
             @Override
@@ -63,7 +65,7 @@ public class DeletePrivateUrlCommandTest {
                     }
 
                     @Override
-                    public void revoke(RoleAssignment ra) {
+                    public void revoke(RoleAssignment ra, DataverseRequest req) {
                         // no-op
                     }
 

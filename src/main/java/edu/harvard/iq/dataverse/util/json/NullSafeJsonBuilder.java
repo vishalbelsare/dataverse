@@ -5,11 +5,11 @@ import edu.harvard.iq.dataverse.api.Util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonValue;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonValue;
 
 /**
  * A JSON builder that drops any null values. If we didn't drop'em,
@@ -27,7 +27,7 @@ public class NullSafeJsonBuilder implements JsonObjectBuilder {
 	private final JsonObjectBuilder delegate;
 	
 	public NullSafeJsonBuilder() {
-		delegate = Json.createObjectBuilder();
+		delegate = JsonUtil.createObjectBuilder();
 	}
 
 	@Override
@@ -64,10 +64,14 @@ public class NullSafeJsonBuilder implements JsonObjectBuilder {
 		return this;
 	}
 
+	public NullSafeJsonBuilder add(String name, Integer value) {
+		return (value != null) ? add(name, value.intValue()) : this;
+	}
+
 	public NullSafeJsonBuilder add(String name, Long value) {
         return ( value != null ) ? add(name, value.longValue()) : this;
     }
-    
+
 	@Override
 	public NullSafeJsonBuilder add(String name, long value) {
 		delegate.add(name, value);
@@ -85,7 +89,10 @@ public class NullSafeJsonBuilder implements JsonObjectBuilder {
 		delegate.add(name, value);
 		return this;
 	}
-    
+	public NullSafeJsonBuilder add(String name, Boolean value) {
+		return (value != null) ? add(name, value.booleanValue()) : this;
+	}
+
 	@Override
 	public NullSafeJsonBuilder addNull(String name) {
 		delegate.addNull(name);

@@ -2,7 +2,7 @@
 Tips
 ====
 
-If you just followed the steps in :doc:`dev-environment` for the first time, you will need to get set up to deploy code to your app server. Below you'll find other tips as well.
+If you just followed the steps in :doc:`classic-dev-env` for the first time, you will need to get set up to deploy code to your app server. Below you'll find other tips as well.
 
 .. contents:: |toctitle|
 	:local:
@@ -10,7 +10,7 @@ If you just followed the steps in :doc:`dev-environment` for the first time, you
 Iterating on Code and Redeploying
 ---------------------------------
 
-When you followed the steps in the :doc:`dev-environment` section, the war file was deployed to Payara by the Dataverse Software installation script. That's fine but once you're ready to make a change to the code you will need to get comfortable with undeploying and redeploying code (a war file) to Payara.
+When you followed the steps in the :doc:`classic-dev-env` section, the war file was deployed to Payara by the Dataverse Software installation script. That's fine but once you're ready to make a change to the code you will need to get comfortable with undeploying and redeploying code (a war file) to Payara.
 
 It's certainly possible to manage deployment and undeployment of the war file via the command line using the ``asadmin`` command that ships with Payara (that's what the Dataverse Software installation script uses and the steps are documented below), but we recommend getting set up with an IDE such as Netbeans to manage deployment for you.
 
@@ -19,20 +19,20 @@ Undeploy the war File from the Dataverse Software Installation Script
 
 Because the initial deployment of the war file was done outside of Netbeans by the Dataverse Software installation script, it's a good idea to undeploy that war file to give Netbeans a clean slate to work with.
 
-Assuming you installed Payara in ``/usr/local/payara5``, run the following ``asadmin`` command to see the version of the Dataverse Software that the Dataverse Software installation script deployed:
+Assuming you installed Payara in ``/usr/local/payara7``, run the following ``asadmin`` command to see the version of the Dataverse Software that the Dataverse Software installation script deployed:
 
-``/usr/local/payara5/bin/asadmin list-applications``
+``/usr/local/payara7/bin/asadmin list-applications``
 
 You will probably see something like ``dataverse-5.0 <ejb, web>`` as the output. To undeploy, use whichever version you see like this:
 
-``/usr/local/payara5/bin/asadmin undeploy dataverse-5.0``
+``/usr/local/payara7/bin/asadmin undeploy dataverse-5.0``
 
 Now that Payara doesn't have anything deployed, we can proceed with getting Netbeans set up to deploy the code.
 
 Add Payara as a Server in Netbeans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Launch Netbeans and click "Tools" and then "Servers". Click "Add Server" and select "Payara Server" and set the installation location to ``/usr/local/payara5``. The defaults are fine so you can click "Next" and "Finish".
+Launch Netbeans and click "Tools" and then "Servers". Click "Add Server" and select "Payara Server" and set the installation location to ``/usr/local/payara7``. The defaults are fine so you can click "Next" and "Finish".
 
 Please note that if you are on a Mac, Netbeans may be unable to start Payara due to proxy settings in Netbeans. Go to the "General" tab in Netbeans preferences and click "Test connection" to see if you are affected. If you get a green checkmark, you're all set. If you get a red exclamation mark, change "Proxy Settings" to "No Proxy" and retest. A more complicated answer having to do with changing network settings is available at https://discussions.apple.com/thread/7680039?answerId=30715103022#30715103022 and the bug is also described at https://netbeans.org/bugzilla/show_bug.cgi?id=268076
 
@@ -57,6 +57,8 @@ From the root of the git repo, run the following command to set the build number
 ``scripts/installer/custom-build-number hello``
 
 This should update or place a file at ``src/main/java/BuildNumber.properties``.
+
+(See also :ref:`auto-custom-build-number` for other ways of changing the build number.)
 
 Then, from Netbeans, click "Run" and then "Clean and Build Project (dataverse)". After this completes successfully, click "Run" and then "Run Project (dataverse)"
 
@@ -92,30 +94,76 @@ Then configure the JVM option mentioned in :ref:`install-imagemagick` to the pat
 Database Schema Exploration
 ---------------------------
 
-With over 100 tables, the Dataverse Software PostgreSQL database ("dvndb") can be somewhat daunting for newcomers. Here are some tips for coming up to speed. (See also the :doc:`sql-upgrade-scripts` section.)
+With over 100 tables, the Dataverse PostgreSQL database can be somewhat daunting for newcomers. Here are some tips for coming up to speed. (See also the :doc:`sql-upgrade-scripts` section.)
+
+.. _db-name-creds:
+
+Database Name and Credentials
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The default database name and credentials depends on how you set up your dev environment.
+
+.. list-table::
+   :header-rows: 1
+   :align: left
+
+   * - MPCONFIG Key
+     - Docker
+     - Classic
+   * - dataverse.db.name
+     - ``dataverse``
+     - ``dvndb``
+   * - dataverse.db.user
+     - ``dataverse``
+     - ``dvnapp``
+   * - dataverse.db.password
+     - ``secret``
+     - ``secret``
+
+Here's an example of using these credentials from within the PostgreSQL container (see :doc:`/container/index`):
+
+.. code-block:: bash
+
+    pdurbin@beamish dataverse % docker exec -it dev_postgres bash
+    root@postgres:/# export PGPASSWORD=secret
+    root@postgres:/# psql -h localhost -U dataverse dataverse
+    psql (16.3 (Debian 16.3-1.pgdg120+1))
+    Type "help" for help.
+    
+    dataverse=# select id,alias from dataverse limit 1;
+     id | alias 
+    ----+-------
+      1 | root
+    (1 row)
+
+See also :ref:`database-persistence` in the Installation Guide.
 
 pgAdmin
-~~~~~~~~
+~~~~~~~
 
-Back in the :doc:`dev-environment` section, we had you install pgAdmin, which can help you explore the tables and execute SQL commands. It's also listed in the :doc:`tools` section.
+If you followed the :doc:`classic-dev-env` section, we had you install pgAdmin, which can help you explore the tables and execute SQL commands. It's also listed in the :doc:`tools` section.
+
+.. _schemaspy:
 
 SchemaSpy
 ~~~~~~~~~
 
 SchemaSpy is a tool that creates a website of entity-relationship diagrams based on your database.
 
-As part of our build process for running integration tests against the latest code in the "develop" branch, we drop the database on the "phoenix" server, recreate the database by deploying the latest war file, and run SchemaSpy to create the following site: http://phoenix.dataverse.org/schemaspy/latest/relationships.html
+As part of our release process (:ref:`update-schemaspy`), we run SchemaSpy and publish the output at https://guides.dataverse.org/en/latest/schemaspy/index.html and (for example) https://guides.dataverse.org/en/6.6/schemaspy/index.html
 
-To run this command on your laptop, download SchemaSpy and take a look at the syntax in ``scripts/deploy/phoenix.dataverse.org/post``
+To run SchemaSpy locally, you can try something like this (after downloading the jars from https://github.com/schemaspy/schemaspy/releases and https://jdbc.postgresql.org/download/):
 
-To read more about the phoenix server, see the :doc:`testing` section.
+``java -jar /tmp/schemaspy-6.2.4.jar -t pgsql -host localhost -db dvndb -u postgres -p secret -s public -dp /tmp/postgresql-42.7.5.jar -o /tmp/latest``
+
+See also :ref:`db-name-creds`.
 
 Deploying With ``asadmin``
 --------------------------
 
 Sometimes you want to deploy code without using Netbeans or from the command line on a server you have ssh'ed into.
 
-For the ``asadmin`` commands below, we assume you have already changed directories to ``/usr/local/payara5/glassfish/bin`` or wherever you have installed Payara.
+For the ``asadmin`` commands below, we assume you have already changed directories to ``/usr/local/payara7/glassfish/bin`` or wherever you have installed Payara.
 
 There are four steps to this process:
 
@@ -143,7 +191,24 @@ Solr
 
 Once some Dataverse collections, datasets, and files have been created and indexed, you can experiment with searches directly from Solr at http://localhost:8983/solr/#/collection1/query and look at the JSON output of searches, such as this wildcard search: http://localhost:8983/solr/collection1/select?q=*%3A*&wt=json&indent=true . You can also get JSON output of static fields Solr knows about: http://localhost:8983/solr/collection1/schema/fields
 
-You can simply double-click "start.jar" rather that running ``java -jar start.jar`` from the command line. Figuring out how to stop Solr after double-clicking it is an exercise for the reader.
+You can simply double-click "start.jar" rather than running ``java -jar start.jar`` from the command line. Figuring out how to stop Solr after double-clicking it is an exercise for the reader.
+
+.. _update-solr-schema-dev:
+
+Updating the Solr Schema (Developers)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Both developers and sysadmins need to update the Solr schema from time to time. One difference is that developers will be committing changes to ``conf/solr/schema.xml`` in git. To prevent cross-platform differences in the git history, when running the ``update-fields.sh`` script, we ask all developers to run the script from within Docker. (See :doc:`/container/configbaker-image` for more on the image we'll use below.)
+
+.. code-block::
+
+    curl http://localhost:8080/api/admin/index/solr/schema | docker run -i --rm -v ./docker-dev-volumes/solr/data:/var/solr gdcc/configbaker:unstable update-fields.sh /var/solr/data/collection1/conf/schema.xml
+
+    cp docker-dev-volumes/solr/data/data/collection1/conf/schema.xml conf/solr/schema.xml
+
+At this point you can do a ``git diff`` and see if your changes make sense before committing.
+
+Sysadmins are welcome to run ``update-fields.sh`` however they like. See :ref:`update-solr-schema` in the Admin Guide and :ref:`additional-metadata-blocks` in the Container Guide for details.
 
 Git
 ---
@@ -164,6 +229,8 @@ Git on Mac
 
 On a Mac, you won't have git installed unless you have "Command Line Developer Tools" installed but running ``git clone`` for the first time will prompt you to install them.
 
+.. _auto-custom-build-number:
+
 Automation of Custom Build Number on Webpage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -173,13 +240,21 @@ commit id in your test deployment webpages on the bottom right corner next to th
 
 When you prefer manual updates, there is another script, see above: :ref:`custom_build_num_script`.
 
+An alternative to that is using *MicroProfile Config* and set the option ``dataverse.build`` via a system property,
+environment variable (``DATAVERSE_BUILD``) or `one of the other config sources
+<https://docs.payara.fish/community/docs/Technical%20Documentation/MicroProfile/Config/Overview.html#config-sources>`__.
+
+You could even override the version itself with the option ``dataverse.version`` in the same way, which is usually
+picked up from a build time source.
+
+See also discussion of version numbers in :ref:`run-build-create-war`.
+
 Sample Data
 -----------
 
-You may want to populate your **non-production** Dataverse installations with sample data. You have a couple options:
+You may want to populate your **non-production** Dataverse installations with sample data.
 
-- Code in https://github.com/IQSS/dataverse-sample-data (recommended). This set of sample data includes several common data types, data subsetted from production datasets in dataverse.harvard.edu, datasets with file hierarchy, and more.
-- Scripts called from ``scripts/deploy/phoenix.dataverse.org/post``.
+https://github.com/IQSS/dataverse-sample-data includes several common data types, data subsetted from production datasets in dataverse.harvard.edu, datasets with file hierarchy, and more.
 
 Switching from Glassfish to Payara
 ----------------------------------
@@ -225,6 +300,15 @@ with the following code in ``SettingsWrapper.java``:
 
 A more serious example would be direct calls to PermissionServiceBean methods used in render logic expressions. This is something that has happened and caused some problems in real life. A simple permission service lookup (for example, whether a user is authorized to create a dataset in the current dataverse) can easily take 15 database queries. Repeated multiple times, this can quickly become a measurable delay in rendering the page. PermissionsWrapper must be used exclusively for any such lookups from JSF pages.
 
-----
+See also :doc:`performance`.
 
-Previous: :doc:`dev-environment` | Next: :doc:`troubleshooting`
+JSF1103 Errors
+~~~~~~~~~~~~~~
+
+Errors of the form ``JSF1103: The metadata facet must be a direct child of the view in viewId /dataverse.xhtml`` come from use of the f:metadata tag at the wrong depth in the .xhtml.
+
+Most/all known instances of the problem were corrected in https://github.com/IQSS/dataverse/pull/11128.
+
+Any page that used <ui:composition template="/dataverse_template.xhtml"> was including the f:metadata farther down in the tree rather than as a direct child of the view.
+As of Payara 6.2025.2, it is not clear that this error was resulting in changes to UI behavior, but the error messages were in the log.
+If you see these errors, this note and the examples in the PR will hopefully provide some insight as to how to fix them.

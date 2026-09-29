@@ -1,11 +1,11 @@
 package edu.harvard.iq.dataverse.authorization.providers.oauth2;
 
 import edu.harvard.iq.dataverse.DataverseSession;
-import edu.harvard.iq.dataverse.EMailValidator;
+import edu.harvard.iq.dataverse.validation.EMailValidator;
 import edu.harvard.iq.dataverse.UserNotification;
 import edu.harvard.iq.dataverse.UserNotificationServiceBean;
-import edu.harvard.iq.dataverse.ValidateEmail;
-import edu.harvard.iq.dataverse.UserNameValidator;
+import edu.harvard.iq.dataverse.validation.ValidateEmail;
+import edu.harvard.iq.dataverse.validation.UserNameValidator;
 import edu.harvard.iq.dataverse.authorization.AuthTestDataServiceBean;
 import edu.harvard.iq.dataverse.authorization.AuthUtil;
 import edu.harvard.iq.dataverse.authorization.AuthenticatedUserDisplayInfo;
@@ -30,15 +30,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.enterprise.context.SessionScoped;
-import javax.faces.application.FacesMessage;
-import javax.faces.component.UIComponent;
-import javax.faces.component.UIInput;
-import javax.faces.context.FacesContext;
-import javax.inject.Named;
-import javax.inject.Inject;
-import org.hibernate.validator.constraints.NotBlank;
+import jakarta.ejb.EJB;
+import jakarta.enterprise.context.SessionScoped;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.component.UIComponent;
+import jakarta.faces.component.UIInput;
+import jakarta.faces.context.FacesContext;
+import jakarta.inject.Named;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.inject.Inject;
 
 /**
  * Backing bean for {@code oauth/welcome.xhtml}, the page that greets new users
@@ -181,7 +181,8 @@ public class OAuth2FirstLoginPage implements java.io.Serializable {
                 newUser.getDisplayInfo().getLastName(),
                 getSelectedEmail(),
                 newUser.getDisplayInfo().getAffiliation(),
-                newUser.getDisplayInfo().getPosition());
+                newUser.getDisplayInfo().getPosition(),
+                newUser.getDisplayInfo().getOrcid());
         final AuthenticatedUser user = authenticationSvc.createAuthenticatedUser(newUser.getUserRecordIdentifier(), getUsername(), newAud, true);
         session.setUser(user);
         /**
@@ -259,7 +260,7 @@ public class OAuth2FirstLoginPage implements java.io.Serializable {
      */
     public void validateUserEmail(FacesContext context, UIComponent toValidate, Object value) {
         String userEmail = (String) value;
-        boolean emailValid = EMailValidator.isEmailValid(userEmail, null);
+        boolean emailValid = EMailValidator.isEmailValid(userEmail);
         if (!emailValid) {
             ((UIInput) toValidate).setValid(false);
             FacesMessage message = new FacesMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("oauth2.newAccount.emailInvalid"), null);

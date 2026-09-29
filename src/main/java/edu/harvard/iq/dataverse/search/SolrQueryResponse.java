@@ -5,8 +5,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.response.FacetField;
 
@@ -14,9 +16,9 @@ public class SolrQueryResponse {
 
     private static final Logger logger = Logger.getLogger(SolrQueryResponse.class.getCanonicalName());
 
-    private List<SolrSearchResult> solrSearchResults;
-    private Long numResultsFound;
-    private Long resultsStart;
+    private List<SolrSearchResult> solrSearchResults = List.of();
+    private Long numResultsFound = 0L;
+    private Long resultsStart = 0L;
     private Map<String, List<String>> spellingSuggestionsByToken;
     private List<FacetCategory> facetCategoryList;
     private List<FacetCategory> typeFacetCategories;
@@ -26,6 +28,7 @@ public class SolrQueryResponse {
     private String error;
     private Map<String, Long> dvObjectCounts = new HashMap<>();
     private Map<String, Long> publicationStatusCounts = new HashMap<>();
+    private boolean solrTemporarilyUnavailable = false;
 
     public static String DATAVERSES_COUNT_KEY = "dataverses_count";
     public static String DATASETS_COUNT_KEY = "datasets_count";
@@ -91,7 +94,14 @@ public class SolrQueryResponse {
         }
         return this.getMapCountsAsJSON(publicationStatusCounts);
     }
-       
+    
+    public boolean isSolrTemporarilyUnavailable() {
+        return solrTemporarilyUnavailable;
+    }
+    
+    public void setSolrTemporarilyUnavailable(boolean solrTemporarilyUnavailable) {
+        this.solrTemporarilyUnavailable = solrTemporarilyUnavailable;
+    }
     
     public JsonObjectBuilder getDvObjectCountsAsJSON(){
         
@@ -114,7 +124,7 @@ public class SolrQueryResponse {
         if (countMap == null){
             return null;
         }
-        JsonObjectBuilder jsonData = Json.createObjectBuilder();
+        JsonObjectBuilder jsonData = JsonUtil.createObjectBuilder();
         
         for (Map.Entry<String, Long>  entry : countMap.entrySet()) {
             jsonData.add(entry.getKey(), entry.getValue());

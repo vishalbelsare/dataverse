@@ -23,9 +23,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import org.apache.commons.lang3.StringUtils;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
 
 /**
  * Input:  dvObject id, parent Id, and dvObject type (from Solr)
@@ -330,23 +331,21 @@ public class RoleTagRetriever {
         // -------------------------------------
         // (3) Process the results -- the parent ID is the Dataverse that we're interested in
         // -------------------------------------
-        Integer dvIdAsInteger;
         Long dvId;
         String dtype;
         Long parentId;
-        
+
         // -------------------------------------
         // Iterate through object list
         // -------------------------------------
         for (Object[] ra : results) {
-            dvIdAsInteger = (Integer)ra[0];     // ?? Why, should be a Long
-            dvId = new Long(dvIdAsInteger);
+            dvId = ((Number)ra[0]).longValue();
             dtype = (String)ra[1];
-            parentId = (Long)ra[2];
+            parentId = ((Number)ra[2]).longValue();
                        
             //msg("result: dvId: " + dvId + " |dtype: " + dtype + " |parentId: " + parentId);
             // Should ALWAYS be a Dataset!
-            if (dtype.equals(DvObject.DATASET_DTYPE_STRING)){  
+            if (DvObject.DType.valueOf(dtype).equals(DvObject.DType.Dataset)) {
                 this.childToParentIdHash.put(dvId, parentId); // Store the parent child relation
                 this.addIdNeedingRoleRetrieval(parentId); // We need the roles for this dataverse
                 this.idToDvObjectType.put(parentId, SearchConstants.SOLR_DATAVERSES); // store the dv object type
@@ -466,7 +465,7 @@ public class RoleTagRetriever {
             return null;
         }
                
-        JsonArrayBuilder jsonArray = Json.createArrayBuilder();
+        JsonArrayBuilder jsonArray = JsonUtil.createArrayBuilder();
         
         for (String roleName : this.finalIdToRolesHash.get(dvObjectId)){            
             jsonArray.add(roleName);            

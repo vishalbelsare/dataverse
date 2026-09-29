@@ -3,68 +3,64 @@ package edu.harvard.iq.dataverse.export.ddi;
 import com.google.gson.Gson;
 
 import edu.harvard.iq.dataverse.ControlledVocabularyValue;
-import edu.harvard.iq.dataverse.DataFile;
-import edu.harvard.iq.dataverse.DataTable;
 import edu.harvard.iq.dataverse.DatasetFieldConstant;
-import edu.harvard.iq.dataverse.DatasetVersion;
 import edu.harvard.iq.dataverse.DvObjectContainer;
-import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.GlobalId;
+import edu.harvard.iq.dataverse.api.dto.DataTableDTO;
+import edu.harvard.iq.dataverse.api.dto.MetadataBlockDTO;
 import edu.harvard.iq.dataverse.api.dto.DatasetDTO;
 import edu.harvard.iq.dataverse.api.dto.DatasetVersionDTO;
-import edu.harvard.iq.dataverse.api.dto.FieldDTO;
 import edu.harvard.iq.dataverse.api.dto.FileDTO;
-import edu.harvard.iq.dataverse.api.dto.MetadataBlockDTO;
-import edu.harvard.iq.dataverse.datavariable.VariableMetadata;
-import edu.harvard.iq.dataverse.datavariable.DataVariable;
-import edu.harvard.iq.dataverse.datavariable.VariableServiceBean;
-import edu.harvard.iq.dataverse.datavariable.VariableRange;
-import edu.harvard.iq.dataverse.datavariable.SummaryStatistic;
-import edu.harvard.iq.dataverse.datavariable.VariableCategory;
-import edu.harvard.iq.dataverse.datavariable.VarGroup;
-import edu.harvard.iq.dataverse.datavariable.CategoryMetadata;
+import edu.harvard.iq.dataverse.api.dto.FieldDTO;
+import edu.harvard.iq.dataverse.api.dto.LicenseDTO;
+
 
 import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.LEVEL_FILE;
 import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_SUBJECT_TAG;
 import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_SUBJECT_UNF;
+import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_SUBJECT_FILEDESCRIPTION;
 import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_TYPE_TAG;
 import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_TYPE_UNF;
+import static edu.harvard.iq.dataverse.export.DDIExportServiceBean.NOTE_TYPE_FILEDESCRIPTION;
 import edu.harvard.iq.dataverse.export.DDIExporter;
+import edu.harvard.iq.dataverse.pidproviders.PidUtil;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 
-import static edu.harvard.iq.dataverse.util.SystemConfig.FQDN;
-import static edu.harvard.iq.dataverse.util.SystemConfig.SITE_URL;
 
-import edu.harvard.iq.dataverse.util.BundleUtil;
-import edu.harvard.iq.dataverse.util.FileUtil;
+import edu.harvard.iq.dataverse.util.SystemConfig;
 import edu.harvard.iq.dataverse.util.json.JsonUtil;
 import edu.harvard.iq.dataverse.util.xml.XmlPrinter;
+import edu.harvard.iq.dataverse.util.xml.XmlUtil;
+import edu.harvard.iq.dataverse.util.xml.XmlWriterUtil;
+//import io.gdcc.spi.export.ExportDataContext;
+import io.gdcc.spi.export.PageRequest;
+import io.gdcc.spi.export.FileExportQuery;
+import io.gdcc.spi.export.ExportDataProvider;
+import io.gdcc.spi.export.ExportException;
+import io.gdcc.spi.export.FileMetadataPredicates;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.json.JsonObject;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.FactoryConfigurationError;
-import javax.xml.parsers.ParserConfigurationException;
 import org.xml.sax.SAXException;
-import org.xml.sax.SAXParseException;
 import org.w3c.dom.Document;
 import org.apache.commons.lang3.StringUtils;
-import org.w3c.dom.DOMException;
 
 // For write operation
 import javax.xml.transform.Transformer;
@@ -74,9 +70,8 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.transform.stream.StreamResult;
-import java.io.File;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.util.stream.Stream;
 
 public class DdiExportUtil {
 
@@ -88,14 +83,19 @@ public class DdiExportUtil {
 
     public static final String LEVEL_DV = "dv";
 
-    
+
     static SettingsServiceBean settingsService;
-    
+
     public static final String NOTE_TYPE_CONTENTTYPE = "DATAVERSE:CONTENTTYPE";
     public static final String NOTE_SUBJECT_CONTENTTYPE = "Content/MIME Type";
+    public static final String CITATION_BLOCK_NAME = "citation";
+    public static final int DATAVARIABLES_BATCH_SIZE = 10000;
+
+    //Some tests don't send real PIDs that can be parsed
+    //Use constant empty PID in these cases
+    private static final String EMPTY_PID = "null:nullnullnull";
 
     public static String datasetDtoAsJson2ddi(String datasetDtoAsJson) {
-        logger.fine(JsonUtil.prettyPrint(datasetDtoAsJson));
         Gson gson = new Gson();
         DatasetDTO datasetDto = gson.fromJson(datasetDtoAsJson, DatasetDTO.class);
         try {
@@ -105,7 +105,7 @@ public class DdiExportUtil {
             return null;
         }
     }
-    
+
     // "short" ddi, without the "<fileDscr>"  and "<dataDscr>/<var>" sections:
     public static void datasetJson2ddi(JsonObject datasetDtoAsJson, OutputStream outputStream) throws XMLStreamException {
         logger.fine(JsonUtil.prettyPrint(datasetDtoAsJson.toString()));
@@ -113,62 +113,126 @@ public class DdiExportUtil {
         DatasetDTO datasetDto = gson.fromJson(datasetDtoAsJson.toString(), DatasetDTO.class);
         dtoddi(datasetDto, outputStream);
     }
-    
+
     private static String dto2ddi(DatasetDTO datasetDto) throws XMLStreamException {
         OutputStream outputStream = new ByteArrayOutputStream();
         dtoddi(datasetDto, outputStream);
         String xml = outputStream.toString();
         return XmlPrinter.prettyPrintXml(xml);
     }
-    
+
     private static void dtoddi(DatasetDTO datasetDto, OutputStream outputStream) throws XMLStreamException {
-        XMLStreamWriter xmlw = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStream);
-        xmlw.writeStartElement("codeBook");
-        xmlw.writeDefaultNamespace("ddi:codebook:2_5");
-        xmlw.writeAttribute("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
-        xmlw.writeAttribute("xsi:schemaLocation", DDIExporter.DEFAULT_XML_NAMESPACE + " " + DDIExporter.DEFAULT_XML_SCHEMALOCATION);
-        writeAttribute(xmlw, "version", DDIExporter.DEFAULT_XML_VERSION);
-        if(isMetadataLanguageSet(datasetDto.getMetadataLanguage())) {
-            writeAttribute(xmlw, "xml:lang", datasetDto.getMetadataLanguage());
+        XMLStreamWriter xmlw = null;
+        try {
+            xmlw = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStream);
+            xmlw.writeStartElement("codeBook");
+            xmlw.writeDefaultNamespace("ddi:codebook:2_5");
+            xmlw.writeAttribute("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
+            xmlw.writeAttribute("xsi:schemaLocation", DDIExporter.DEFAULT_XML_NAMESPACE + " " + DDIExporter.DEFAULT_XML_SCHEMALOCATION);
+            xmlw.writeAttribute("version", DDIExporter.DEFAULT_XML_VERSION);
+            if (DvObjectContainer.isMetadataLanguageSet(datasetDto.getMetadataLanguage())) {
+                xmlw.writeAttribute("xml:lang", datasetDto.getMetadataLanguage());
+            }
+            createStdyDscr(xmlw, datasetDto);
+            if (datasetDto.getDatasetVersion().getFiles() != null) {
+                // We create "otherMat" sections with skipTabularFiles = false, because 
+                // this is the short version of the DDI where all the files, whether 
+                // ingested or not, are encoded as otherMats:
+
+                createOtherMats(xmlw, datasetDto.getDatasetVersion().getFiles(), false);
+            }
+            xmlw.writeEndElement(); // codeBook
+            xmlw.flush();
+        } finally {
+            if (xmlw != null) {
+                try {
+                    xmlw.close();
+                } catch (XMLStreamException e) {
+                    // Log this exception, but don't rethrow as it's in finally block
+                    logger.log(Level.WARNING, "Error closing XMLStreamWriter", e);
+                }
+            }
         }
-        createStdyDscr(xmlw, datasetDto);
-        createOtherMats(xmlw, datasetDto.getDatasetVersion().getFiles());
-        xmlw.writeEndElement(); // codeBook
-        xmlw.flush();
     }
 
-    
+
     // "full" ddi, with the the "<fileDscr>"  and "<dataDscr>/<var>" sections: 
-    public static void datasetJson2ddi(JsonObject datasetDtoAsJson, DatasetVersion version, OutputStream outputStream) throws XMLStreamException {
+    public static void datasetJson2ddi(JsonObject datasetDtoAsJson, ExportDataProvider dataProvider, OutputStream outputStream) throws XMLStreamException {
         logger.fine(JsonUtil.prettyPrint(datasetDtoAsJson.toString()));
         Gson gson = new Gson();
         DatasetDTO datasetDto = gson.fromJson(datasetDtoAsJson.toString(), DatasetDTO.class);
-        
-        XMLStreamWriter xmlw = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStream);
-        xmlw.writeStartElement("codeBook");
-        xmlw.writeDefaultNamespace("ddi:codebook:2_5");
-        xmlw.writeAttribute("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
-        xmlw.writeAttribute("xsi:schemaLocation", DDIExporter.DEFAULT_XML_NAMESPACE + " " + DDIExporter.DEFAULT_XML_SCHEMALOCATION);
-        writeAttribute(xmlw, "version", DDIExporter.DEFAULT_XML_VERSION);
-        if(isMetadataLanguageSet(datasetDto.getMetadataLanguage())) {
-            writeAttribute(xmlw, "xml:lang", datasetDto.getMetadataLanguage());
+
+        XMLStreamWriter xmlw = null;
+        try {
+            xmlw = XMLOutputFactory.newInstance().createXMLStreamWriter(outputStream);
+
+            xmlw.writeStartElement("codeBook");
+            xmlw.writeDefaultNamespace("ddi:codebook:2_5");
+            xmlw.writeAttribute("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
+            xmlw.writeAttribute("xsi:schemaLocation", DDIExporter.DEFAULT_XML_NAMESPACE + " " + DDIExporter.DEFAULT_XML_SCHEMALOCATION);
+            xmlw.writeAttribute("version", DDIExporter.DEFAULT_XML_VERSION);
+            if (DvObjectContainer.isMetadataLanguageSet(datasetDto.getMetadataLanguage())) {
+                xmlw.writeAttribute("xml:lang", datasetDto.getMetadataLanguage());
+            }
+            createStdyDscr(xmlw, datasetDto);
+
+            // If there are no files in this dataset, we can stop here
+            if (datasetDto.getDatasetVersion().getFiles() != null) {
+
+                // The Files and Data section, for the rich metadata describing 
+                // the "ingested" tabular data files.
+                // Note that as of 6.8, we are generating the fileDscr from the DTOs
+                // supplied by ExportDataProvider.ExportDataProvider.getDatasetJson()
+                List<Integer> varQuantityMap = createFileDscrs(xmlw, datasetDto.getDatasetVersion().getFiles());
+
+                if (varQuantityMap != null && !varQuantityMap.isEmpty()) {
+                    // Now that we know that there is 1 or more ingested tabular file
+                    // in the dataset, we can try and produce the dataDscr section. 
+                    // A dataset with a large number 
+                    // of ingested files may contain more of such metadata than is 
+                    // practical or desirable to pass around as a single chunk of json. 
+                    // As of the ExportDataProvider v2.1.0 a more efficient method is 
+                    // provided for retrieving this information in chunks of length-offset
+                    // datatables-worth at a time.
+                    //if (tabularFilesTotal <= DATATABLES_BATCH_SIZE) {
+                    if (isVarQuantityLimitExceeded(varQuantityMap)) {
+                        createDataDscrInBatches(xmlw, varQuantityMap, dataProvider); 
+                    } else {
+                        createDataDscr(xmlw, dataProvider.getDatasetFileDetails());                        
+                    }
+                }
+                // otherMats section:
+                // Note that we are asking createOtherMats() to skip tabular files,
+                // since we have already created the fileDscr and dataDscr sections 
+                // for those. 
+                createOtherMats(xmlw, datasetDto.getDatasetVersion().getFiles(), true);
+            }
+            xmlw.writeEndElement(); // codeBook
+            xmlw.flush();
+        } finally {
+            if (xmlw != null) {
+                try {
+                    xmlw.close();
+                } catch (XMLStreamException e) {
+                    // Log this exception, but don't rethrow as it's in finally block
+                    logger.log(Level.WARNING, "Error closing XMLStreamWriter", e);
+                }
+            }
         }
-        createStdyDscr(xmlw, datasetDto);
-        createFileDscr(xmlw, version);
-        createDataDscr(xmlw, version);
-        createOtherMatsFromFileMetadatas(xmlw, version.getFileMetadatas());
-        xmlw.writeEndElement(); // codeBook
-        xmlw.flush();
-    }
-    
-    
-    private static boolean isMetadataLanguageSet(String mdLang) {
-       if(mdLang!=null && !mdLang.equals(DvObjectContainer.UNDEFINED_METADATA_LANGUAGE_CODE)) {
-           return true;
-       }
-        return false;
     }
 
+    private static boolean isVarQuantityLimitExceeded(List<Integer> varQuantityMap) {
+        if (varQuantityMap != null) {
+            long varQuantityCount = 0; 
+            for (long varQuantity : varQuantityMap) {
+                varQuantityCount += varQuantity; 
+                if (varQuantityCount > DATAVARIABLES_BATCH_SIZE) {
+                    return true; 
+                }
+            }
+        }
+        return false; 
+    }
     /**
      * @todo This is just a stub, copied from DDIExportServiceBean. It should
      * produce valid DDI based on
@@ -187,11 +251,14 @@ public class DdiExportUtil {
         String persistentAuthority = datasetDto.getAuthority();
         String persistentId = datasetDto.getIdentifier();
 
-        String pid = persistentProtocol + ":" + persistentAuthority + "/" + persistentId;
-        String pidUri = pid;
-        //Some tests don't send real PIDs - don't try to get their URL form
-        if(!pidUri.equals("null:null/null")) {
-            pidUri= new GlobalId(persistentProtocol + ":" + persistentAuthority + "/" + persistentId).toURL().toString();
+        GlobalId pid = PidUtil.parseAsGlobalID(persistentProtocol, persistentAuthority, persistentId);
+        String pidUri, pidString;
+        if(pid != null) {
+            pidUri = pid.asURL();
+            pidString = pid.asString();
+        } else {
+            pidUri = EMPTY_PID;
+            pidString = EMPTY_PID;
         }
         // The "persistentAgency" tag is used for the "agency" attribute of the 
         // <IDNo> ddi section; back in the DVN3 days we used "handle" and "DOI" 
@@ -202,30 +269,33 @@ public class DdiExportUtil {
         } else if ("doi".equals(persistentAgency)) {
             persistentAgency = "DOI";
         }
-        
+
         //docDesc Block
         writeDocDescElement (xmlw, datasetDto);
         //stdyDesc Block
         xmlw.writeStartElement("stdyDscr");
         xmlw.writeStartElement("citation");
         xmlw.writeStartElement("titlStmt");
-       
-        writeFullElement(xmlw, "titl", dto2Primitive(version, DatasetFieldConstant.title), datasetDto.getMetadataLanguage());
-        writeFullElement(xmlw, "subTitl", dto2Primitive(version, DatasetFieldConstant.subTitle));
-        writeFullElement(xmlw, "altTitl", dto2Primitive(version, DatasetFieldConstant.alternativeTitle));
-        
+
+        XmlWriterUtil.writeFullElement(xmlw, "titl", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.title), datasetDto.getMetadataLanguage());
+        XmlWriterUtil.writeFullElement(xmlw, "subTitl", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.subTitle));
+        FieldDTO altField = dto2FieldDTO( version, DatasetFieldConstant.alternativeTitle, "citation"  );
+        if (altField != null) {
+            writeMultipleElement(xmlw, "altTitl", altField, datasetDto.getMetadataLanguage());
+        }
+
         xmlw.writeStartElement("IDNo");
-        writeAttribute(xmlw, "agency", persistentAgency);
-        
-        
-        xmlw.writeCharacters(pid);
+        XmlWriterUtil.writeAttribute(xmlw, "agency", persistentAgency);
+
+
+        xmlw.writeCharacters(pidString);
         xmlw.writeEndElement(); // IDNo
         writeOtherIdElement(xmlw, version);
         xmlw.writeEndElement(); // titlStmt
 
         writeAuthorsElement(xmlw, version);
         writeProducersElement(xmlw, version);
-        
+
         xmlw.writeStartElement("distStmt");
       //The default is to add Dataverse Repository as a distributor. The excludeinstallationifset setting turns that off if there is a distributor defined in the metadata
         boolean distributorSet=false;
@@ -235,38 +305,40 @@ public class DdiExportUtil {
                 distributorSet=true;
             }
         }
-        
+
         boolean excludeRepository = settingsService.isTrueForKey(SettingsServiceBean.Key.ExportInstallationAsDistributorOnlyWhenNotSet, false);
         if (!StringUtils.isEmpty(datasetDto.getPublisher()) && !(excludeRepository && distributorSet)) {
             xmlw.writeStartElement("distrbtr");
-            writeAttribute(xmlw, "source", "archive");
+            xmlw.writeAttribute("source", "archive");
             xmlw.writeCharacters(datasetDto.getPublisher());
             xmlw.writeEndElement(); //distrbtr
         }
         writeDistributorsElement(xmlw, version, datasetDto.getMetadataLanguage());
         writeContactsElement(xmlw, version);
-        writeFullElement(xmlw, "distDate", dto2Primitive(version, DatasetFieldConstant.distributionDate));
-        writeFullElement(xmlw, "depositr", dto2Primitive(version, DatasetFieldConstant.depositor));
-        writeFullElement(xmlw, "depDate", dto2Primitive(version, DatasetFieldConstant.dateOfDeposit));
+        /* per SCHEMA, depositr comes before depDate! - L.A. */
+        XmlWriterUtil.writeFullElement(xmlw, "depositr", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.depositor));
+        /* ... and depDate comes before distDate - L.A. */
+        XmlWriterUtil.writeFullElement(xmlw, "depDate", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.dateOfDeposit));
+        XmlWriterUtil.writeFullElement(xmlw, "distDate", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.distributionDate));
 
         xmlw.writeEndElement(); // diststmt
 
         writeSeriesElement(xmlw, version);
         xmlw.writeStartElement("holdings");
-        writeAttribute(xmlw, "URI", pidUri);
+        XmlWriterUtil.writeAttribute(xmlw, "URI", pidUri);
         xmlw.writeEndElement(); //holdings
-        
+
         xmlw.writeEndElement(); // citation
         //End Citation Block
-        
+
         //Start Study Info Block
         // Study Info
         xmlw.writeStartElement("stdyInfo");
-        
+
         writeSubjectElement(xmlw, version, datasetDto.getMetadataLanguage()); //Subject and Keywords
         writeAbstractElement(xmlw, version, datasetDto.getMetadataLanguage()); // Description
         writeSummaryDescriptionElement(xmlw, version, datasetDto.getMetadataLanguage());
-        writeFullElement(xmlw, "notes", dto2Primitive(version, DatasetFieldConstant.notesText));
+        XmlWriterUtil.writeFullElement(xmlw, "notes", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.notesText));
         ////////
         xmlw.writeEndElement(); // stdyInfo
 
@@ -274,58 +346,93 @@ public class DdiExportUtil {
         writeDataAccess(xmlw , version);
         writeOtherStudyMaterial(xmlw , version);
 
-        writeFullElement(xmlw, "notes", dto2Primitive(version, DatasetFieldConstant.datasetLevelErrorNotes));
-        
+        XmlWriterUtil.writeFullElement(xmlw, "notes", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.datasetLevelErrorNotes));
+
         xmlw.writeEndElement(); // stdyDscr
 
     }
 
     private static void writeOtherStudyMaterial(XMLStreamWriter xmlw , DatasetVersionDTO version) throws XMLStreamException {
+        List<String> relMaterials;
+        List<String> relDatasets;
+        List<String> relReferences;
+        try {
+            relMaterials = dto2PrimitiveList(version, DatasetFieldConstant.relatedMaterial);
+            relDatasets = dto2PrimitiveList(version, DatasetFieldConstant.relatedDatasets);
+            relReferences = dto2PrimitiveList(version, DatasetFieldConstant.otherReferences); 
+        } catch (Exception e) {
+            logger.warning("Exporting dataset to DDI failed for related materials element: " + e.getMessage());
+            return;
+        }
         xmlw.writeStartElement("othrStdyMat");
-        writeFullElementList(xmlw, "relMat", dto2PrimitiveList(version, DatasetFieldConstant.relatedMaterial));
-        writeFullElementList(xmlw, "relStdy", dto2PrimitiveList(version, DatasetFieldConstant.relatedDatasets));
+        XmlWriterUtil.writeFullElementList(xmlw, "relMat", relMaterials);
+        XmlWriterUtil.writeFullElementList(xmlw, "relStdy", relDatasets);
         writeRelPublElement(xmlw, version);
-        writeFullElementList(xmlw, "othRefs", dto2PrimitiveList(version, DatasetFieldConstant.otherReferences));
+        XmlWriterUtil.writeFullElementList(xmlw, "othRefs", relReferences);
         xmlw.writeEndElement(); //othrStdyMat
     }
 
+    /*
+            <xs:sequence>
+               <xs:element ref="setAvail" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="useStmt" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="notes" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+    */
     private static void writeDataAccess(XMLStreamWriter xmlw , DatasetVersionDTO version) throws XMLStreamException {
         xmlw.writeStartElement("dataAccs");
+
+        xmlw.writeStartElement("setAvail");
+        XmlWriterUtil.writeFullElement(xmlw, "accsPlac", version.getDataAccessPlace());
+        XmlWriterUtil.writeFullElement(xmlw, "origArch", version.getOriginalArchive());
+        XmlWriterUtil.writeFullElement(xmlw, "avlStatus", version.getAvailabilityStatus());
+        XmlWriterUtil.writeFullElement(xmlw, "collSize", version.getSizeOfCollection());
+        XmlWriterUtil.writeFullElement(xmlw, "complete", version.getStudyCompletion());
+        xmlw.writeEndElement(); //setAvail
+
+        xmlw.writeStartElement("useStmt");
+        XmlWriterUtil.writeFullElement(xmlw, "confDec", version.getConfidentialityDeclaration());
+        XmlWriterUtil.writeFullElement(xmlw, "specPerm", version.getSpecialPermissions());
+        XmlWriterUtil.writeFullElement(xmlw, "restrctn", version.getRestrictions());
+        XmlWriterUtil.writeFullElement(xmlw, "contact", version.getContactForAccess());
+        XmlWriterUtil.writeFullElement(xmlw, "citReq", version.getCitationRequirements());
+        XmlWriterUtil.writeFullElement(xmlw, "deposReq", version.getDepositorRequirements());
+        XmlWriterUtil.writeFullElement(xmlw, "conditions", version.getConditions());
+        XmlWriterUtil.writeFullElement(xmlw, "disclaimer", version.getDisclaimer());
+        xmlw.writeEndElement(); //useStmt
+
+        /* any <note>s: */
         if (version.getTermsOfUse() != null && !version.getTermsOfUse().trim().equals("")) {
             xmlw.writeStartElement("notes");
-            writeAttribute(xmlw, "type", NOTE_TYPE_TERMS_OF_USE);
-            writeAttribute(xmlw, "level", LEVEL_DV);
+            xmlw.writeAttribute("type", NOTE_TYPE_TERMS_OF_USE);
+            xmlw.writeAttribute("level", LEVEL_DV);
             xmlw.writeCharacters(version.getTermsOfUse());
             xmlw.writeEndElement(); //notes
         }
+
         if (version.getTermsOfAccess() != null && !version.getTermsOfAccess().trim().equals("")) {
             xmlw.writeStartElement("notes");
-            writeAttribute(xmlw, "type", NOTE_TYPE_TERMS_OF_ACCESS);
-            writeAttribute(xmlw, "level", LEVEL_DV);
+            xmlw.writeAttribute("type", NOTE_TYPE_TERMS_OF_ACCESS);
+            xmlw.writeAttribute("level", LEVEL_DV);
             xmlw.writeCharacters(version.getTermsOfAccess());
             xmlw.writeEndElement(); //notes
         }
 
-        xmlw.writeStartElement("setAvail");
-        writeFullElement(xmlw, "accsPlac", version.getDataAccessPlace());
-        writeFullElement(xmlw, "origArch", version.getOriginalArchive());
-        writeFullElement(xmlw, "avlStatus", version.getAvailabilityStatus());
-        writeFullElement(xmlw, "collSize", version.getSizeOfCollection());
-        writeFullElement(xmlw, "complete", version.getStudyCompletion());
-        xmlw.writeEndElement(); //setAvail
-        xmlw.writeStartElement("useStmt");
-        writeFullElement(xmlw, "confDec", version.getConfidentialityDeclaration());
-        writeFullElement(xmlw, "specPerm", version.getSpecialPermissions());
-        writeFullElement(xmlw, "restrctn", version.getRestrictions());
-        writeFullElement(xmlw, "contact", version.getContactForAccess());
-        writeFullElement(xmlw, "citReq", version.getCitationRequirements());
-        writeFullElement(xmlw, "deposReq", version.getDepositorRequirements());
-        writeFullElement(xmlw, "conditions", version.getConditions());
-        writeFullElement(xmlw, "disclaimer", version.getDisclaimer());
-        xmlw.writeEndElement(); //useStmt
+        LicenseDTO license = version.getLicense();
+        if (license != null) {
+            String name = license.getName();
+            String uri = license.getUri();
+            if ((name != null && !name.trim().equals("")) && (uri != null && !uri.trim().equals(""))) {
+                xmlw.writeStartElement("notes");
+                xmlw.writeAttribute("type", NOTE_TYPE_TERMS_OF_USE);
+                xmlw.writeAttribute("level", LEVEL_DV);
+                xmlw.writeCharacters("<a href=" + '"' + uri + '"' + ">" + name + "</a>");
+                xmlw.writeEndElement(); //notes
+            }
+        }
         xmlw.writeEndElement(); //dataAccs
     }
-    
+
     private static void writeDocDescElement (XMLStreamWriter xmlw, DatasetDTO datasetDto) throws XMLStreamException {
         DatasetVersionDTO version = datasetDto.getDatasetVersion();
         String persistentProtocol = datasetDto.getProtocol();
@@ -339,29 +446,36 @@ public class DdiExportUtil {
         } else if ("doi".equals(persistentAgency)) {
             persistentAgency = "DOI";
         }
-        
+
         String persistentAuthority = datasetDto.getAuthority();
         String persistentId = datasetDto.getIdentifier();
-        
+        GlobalId pid = PidUtil.parseAsGlobalID(persistentProtocol, persistentAuthority, persistentId);
+        String pidString;
+        if(pid != null) {
+            pidString = pid.asString();
+        } else {
+            pidString = EMPTY_PID;
+        }
+
         xmlw.writeStartElement("docDscr");
         xmlw.writeStartElement("citation");
         xmlw.writeStartElement("titlStmt");
-        writeFullElement(xmlw, "titl", dto2Primitive(version, DatasetFieldConstant.title), datasetDto.getMetadataLanguage());
+        XmlWriterUtil.writeFullElement(xmlw, "titl", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.title), datasetDto.getMetadataLanguage());
         xmlw.writeStartElement("IDNo");
-        writeAttribute(xmlw, "agency", persistentAgency);
-        xmlw.writeCharacters(persistentProtocol + ":" + persistentAuthority + "/" + persistentId);
+        XmlWriterUtil.writeAttribute(xmlw, "agency", persistentAgency);
+        xmlw.writeCharacters(pidString);
         xmlw.writeEndElement(); // IDNo
         xmlw.writeEndElement(); // titlStmt
         xmlw.writeStartElement("distStmt");
         //The doc is always published by the Dataverse Repository
         if (!StringUtils.isEmpty(datasetDto.getPublisher())) {
             xmlw.writeStartElement("distrbtr");
-            writeAttribute(xmlw, "source", "archive");
+            xmlw.writeAttribute("source", "archive");
             xmlw.writeCharacters(datasetDto.getPublisher());
             xmlw.writeEndElement(); // distrbtr
         }
-        writeFullElement(xmlw, "distDate", datasetDto.getPublicationDate());
-        
+        XmlWriterUtil.writeFullElement(xmlw, "distDate", datasetDto.getPublicationDate());
+
         xmlw.writeEndElement(); // diststmt
         writeVersionStatement(xmlw, version);
         xmlw.writeStartElement("biblCit");
@@ -369,230 +483,363 @@ public class DdiExportUtil {
         xmlw.writeEndElement(); // biblCit
         xmlw.writeEndElement(); // citation      
         xmlw.writeEndElement(); // docDscr
-        
+
     }
-    
+
     private static void writeVersionStatement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException{
         xmlw.writeStartElement("verStmt");
-        writeAttribute(xmlw,"source","archive"); 
+        xmlw.writeAttribute("source","archive");
         xmlw.writeStartElement("version");
-        writeAttribute(xmlw,"date", datasetVersionDTO.getReleaseTime().substring(0, 10));
-        writeAttribute(xmlw,"type", datasetVersionDTO.getVersionState().toString()); 
-        xmlw.writeCharacters(datasetVersionDTO.getVersionNumber().toString());
+        if (datasetVersionDTO.getReleaseTime() != null) {
+            XmlWriterUtil.writeAttribute(xmlw, "date", datasetVersionDTO.getReleaseTime().substring(0, 10));
+        }
+        XmlWriterUtil.writeAttribute(xmlw, "type", datasetVersionDTO.getVersionState().toString());
+        if (datasetVersionDTO.getVersionNumber() != null) {
+            xmlw.writeCharacters(datasetVersionDTO.getVersionNumber().toString());
+        }
         xmlw.writeEndElement(); // version
+        if (!StringUtils.isBlank(datasetVersionDTO.getVersionNote())) {
+            xmlw.writeStartElement("notes");
+            xmlw.writeCharacters(datasetVersionDTO.getVersionNote());
+            xmlw.writeEndElement(); // notes
+        }
+
         xmlw.writeEndElement(); // verStmt
     }
-    
+
+    /* From the DDI 2.5 schema: 
+            <xs:sequence>
+               <xs:element ref="timePrd" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="collDate" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="nation" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="geogCover" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="geogUnit" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="geoBndBox" minOccurs="0"/>
+               <xs:element ref="boundPoly" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="anlyUnit" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="universe" minOccurs="0" maxOccurs="unbounded"/>
+               <xs:element ref="dataKind" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+    */
     private static void writeSummaryDescriptionElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO, String lang) throws XMLStreamException {
         xmlw.writeStartElement("sumDscr");
+        FieldDTO timePeriodCoveredDTO = null;
+        FieldDTO dateOfCollectionDTO = null;
+        FieldDTO geographicCoverageDTO = null;
+        FieldDTO geographicBoundingBoxDTO = null;
+        FieldDTO unitOfAnalysisDTO = null;
+        FieldDTO universeDTO = null;
+        FieldDTO kindOfDataDTO = null;
+
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
             MetadataBlockDTO value = entry.getValue();
+
             if ("citation".equals(key)) {
-                Integer per = 0;
-                Integer coll = 0;
                 for (FieldDTO fieldDTO : value.getFields()) {
                     if (DatasetFieldConstant.timePeriodCovered.equals(fieldDTO.getTypeName())) {
-                        String dateValStart = "";
-                        String dateValEnd = "";
-                        for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
-                            per++;
-                            for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
-                                FieldDTO next = iterator.next();
-                                if (DatasetFieldConstant.timePeriodCoveredStart.equals(next.getTypeName())) {
-                                    dateValStart = next.getSinglePrimitive();
-                                }
-                                if (DatasetFieldConstant.timePeriodCoveredEnd.equals(next.getTypeName())) {
-                                    dateValEnd = next.getSinglePrimitive();
-                                }
-                            }
-                            if (!dateValStart.isEmpty()) {
-                                writeDateElement(xmlw, "timePrd", "P"+ per.toString(), "start", dateValStart );
-                            }
-                            if (!dateValEnd.isEmpty()) {
-                                writeDateElement(xmlw, "timePrd",  "P"+ per.toString(), "end", dateValEnd );
-                            }
-                        }
+                        timePeriodCoveredDTO = fieldDTO;
                     }
+
                     if (DatasetFieldConstant.dateOfCollection.equals(fieldDTO.getTypeName())) {
-                        String dateValStart = "";
-                        String dateValEnd = "";
-                        for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
-                            coll++;
-                            for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
-                                FieldDTO next = iterator.next();
-                                if (DatasetFieldConstant.dateOfCollectionStart.equals(next.getTypeName())) {
-                                    dateValStart = next.getSinglePrimitive();
-                                }
-                                if (DatasetFieldConstant.dateOfCollectionEnd.equals(next.getTypeName())) {
-                                    dateValEnd = next.getSinglePrimitive();
-                                }
-                            }
-                            if (!dateValStart.isEmpty()) {
-                                writeDateElement(xmlw, "collDate",  "P"+ coll.toString(), "start", dateValStart );
-                            }
-                            if (!dateValEnd.isEmpty()) {
-                                writeDateElement(xmlw,  "collDate",  "P"+ coll.toString(), "end", dateValEnd );
-                            }
-                        }
+                        dateOfCollectionDTO = fieldDTO;
                     }
+
                     if (DatasetFieldConstant.kindOfData.equals(fieldDTO.getTypeName())) {
-                        writeMultipleElement(xmlw, "dataKind", fieldDTO);                     
+                        kindOfDataDTO = fieldDTO;
                     }
                 }
             }
-            
-            if("geospatial".equals(key)){                
+
+            if ("geospatial".equals(key)) {
                 for (FieldDTO fieldDTO : value.getFields()) {
                     if (DatasetFieldConstant.geographicCoverage.equals(fieldDTO.getTypeName())) {
-
-                        for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
-                            HashMap<String, String> geoMap = new HashMap<>();
-                            for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
-                                FieldDTO next = iterator.next();
-                                if (DatasetFieldConstant.country.equals(next.getTypeName())) {
-                                    geoMap.put("country", next.getSinglePrimitive());
-                                }
-                                if (DatasetFieldConstant.city.equals(next.getTypeName())) {
-                                    geoMap.put("city", next.getSinglePrimitive());
-                                }
-                                if (DatasetFieldConstant.state.equals(next.getTypeName())) {
-                                    geoMap.put("state", next.getSinglePrimitive());
-                                } 
-                                if (DatasetFieldConstant.otherGeographicCoverage.equals(next.getTypeName())) {
-                                    geoMap.put("otherGeographicCoverage", next.getSinglePrimitive());
-                                } 
-                            }
-
-                            if (geoMap.get("country") != null) {
-                                writeFullElement(xmlw, "nation", geoMap.get("country"));
-                            }
-                            if (geoMap.get("city") != null) {
-                                writeFullElement(xmlw, "geogCover", geoMap.get("city"));
-                            }
-                            if (geoMap.get("state") != null) {
-                                writeFullElement(xmlw, "geogCover", geoMap.get("state"));
-                            }
-                            if (geoMap.get("otherGeographicCoverage") != null) {
-                                writeFullElement(xmlw, "geogCover", geoMap.get("otherGeographicCoverage"));
-                            }
-
-                        }
+                        geographicCoverageDTO = fieldDTO;
                     }
                     if (DatasetFieldConstant.geographicBoundingBox.equals(fieldDTO.getTypeName())) {
 
-                        for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
-                            xmlw.writeStartElement("geoBndBox");
-                            for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
-                                FieldDTO next = iterator.next();
-                                if (DatasetFieldConstant.westLongitude.equals(next.getTypeName())) {
-                                    writeFullElement(xmlw, "westBL", next.getSinglePrimitive());
-                                }
-                                if (DatasetFieldConstant.eastLongitude.equals(next.getTypeName())) {
-                                    writeFullElement(xmlw, "eastBL", next.getSinglePrimitive());
-                                }
-                                if (DatasetFieldConstant.northLatitude.equals(next.getTypeName())) {
-                                    writeFullElement(xmlw, "northBL", next.getSinglePrimitive());
-                                }  
-                                if (DatasetFieldConstant.southLatitude.equals(next.getTypeName())) {
-                                    writeFullElement(xmlw, "southBL", next.getSinglePrimitive());
-                                }                               
-
-                            }
-                            xmlw.writeEndElement();
-                        }
+                        geographicBoundingBoxDTO = fieldDTO;
 
                     }
                 }
-                    writeFullElementList(xmlw, "geogUnit", dto2PrimitiveList(datasetVersionDTO, DatasetFieldConstant.geographicUnit));
             }
 
-            if("socialscience".equals(key)){                
+            if ("socialscience".equals(key)) {
                 for (FieldDTO fieldDTO : value.getFields()) {
                     if (DatasetFieldConstant.universe.equals(fieldDTO.getTypeName())) {
-                        writeMultipleElement(xmlw, "universe", fieldDTO);
+                        universeDTO = fieldDTO;
                     }
                     if (DatasetFieldConstant.unitOfAnalysis.equals(fieldDTO.getTypeName())) {
-                        writeI18NElementList(xmlw, "anlyUnit", fieldDTO.getMultipleVocab(), "unitOfAnalysis", fieldDTO.getTypeClass(), "socialscience", lang);
+                        unitOfAnalysisDTO = fieldDTO;
                     }
-                }              
+                }
             }
         }
+        /* Finally, we can write the fields we have collected, in the correct order: -L.A.*/
+
+        if (timePeriodCoveredDTO != null) {
+            String dateValStart = "";
+            String dateValEnd = "";
+            Integer per = 0;
+            for (HashSet<FieldDTO> foo : timePeriodCoveredDTO.getMultipleCompound()) {
+                per++;
+                for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
+                    FieldDTO next = iterator.next();
+                    if (DatasetFieldConstant.timePeriodCoveredStart.equals(next.getTypeName())) {
+                        dateValStart = next.getSinglePrimitive();
+                    }
+                    if (DatasetFieldConstant.timePeriodCoveredEnd.equals(next.getTypeName())) {
+                        dateValEnd = next.getSinglePrimitive();
+                    }
+                }
+                if (!dateValStart.isEmpty()) {
+                    writeDateElement(xmlw, "timePrd", "P" + per.toString(), "start", dateValStart);
+                }
+                if (!dateValEnd.isEmpty()) {
+                    writeDateElement(xmlw, "timePrd", "P" + per.toString(), "end", dateValEnd);
+                }
+            }
+        }
+
+        if (dateOfCollectionDTO != null) {
+            String dateValStart = "";
+            String dateValEnd = "";
+            Integer coll = 0;
+            for (HashSet<FieldDTO> foo : dateOfCollectionDTO.getMultipleCompound()) {
+                coll++;
+                for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
+                    FieldDTO next = iterator.next();
+                    if (DatasetFieldConstant.dateOfCollectionStart.equals(next.getTypeName())) {
+                        dateValStart = next.getSinglePrimitive();
+                    }
+                    if (DatasetFieldConstant.dateOfCollectionEnd.equals(next.getTypeName())) {
+                        dateValEnd = next.getSinglePrimitive();
+                    }
+                }
+                if (!dateValStart.isEmpty()) {
+                    writeDateElement(xmlw, "collDate", "P" + coll.toString(), "start", dateValStart);
+                }
+                if (!dateValEnd.isEmpty()) {
+                    writeDateElement(xmlw, "collDate", "P" + coll.toString(), "end", dateValEnd);
+                }
+            }
+        }
+
+        /* <nation> and <geogCover> come next, in that order. -L.A. */
+        if (geographicCoverageDTO != null) {
+
+            List<String> nationList = new ArrayList<>();
+            List<String> geogCoverList = new ArrayList<>();
+
+            for (HashSet<FieldDTO> foo : geographicCoverageDTO.getMultipleCompound()) {
+                for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
+                    FieldDTO next = iterator.next();
+                    /* our "country" field maps 1:1 to the DDI "<nation>": */
+                    if (DatasetFieldConstant.country.equals(next.getTypeName())) {
+                        nationList.add(next.getSinglePrimitive());
+                    }
+                    /* city, state and otherGeographicCoverage all exported as "<geogCover>": */
+                    if (DatasetFieldConstant.city.equals(next.getTypeName())
+                            || DatasetFieldConstant.state.equals(next.getTypeName())
+                            || DatasetFieldConstant.otherGeographicCoverage.equals(next.getTypeName())) {
+                        geogCoverList.add(next.getSinglePrimitive());
+                    }
+                }
+            }
+
+            /**
+             * And now we can write all the fields encountered, first the
+             * "<nation>" entries, then all the "<geogCover>" ones:
+             */
+            for (String nationEntry : nationList) {
+                XmlWriterUtil.writeFullElement(xmlw, "nation", nationEntry);
+            }
+            for (String geogCoverEntry : geogCoverList) {
+                XmlWriterUtil.writeFullElement(xmlw, "geogCover", geogCoverEntry);
+            }
+        }
+
+        XmlWriterUtil.writeFullElementList(xmlw, "geogUnit", dto2PrimitiveList(datasetVersionDTO, DatasetFieldConstant.geographicUnit));
+
+        /* Only 1 geoBndBox is allowed in the DDI.
+           So, I'm just going to arbitrarily use the first one, and ignore the rest! -L.A. */
+        if (geographicBoundingBoxDTO != null) {
+            HashSet<FieldDTO> bndBoxSet = geographicBoundingBoxDTO.getMultipleCompound().get(0);
+            xmlw.writeStartElement("geoBndBox");
+            HashMap<String, String> geoBndBoxMap = new HashMap<>();
+            for (FieldDTO next : bndBoxSet) {
+                if (DatasetFieldConstant.westLongitude.equals(next.getTypeName())) {
+                    geoBndBoxMap.put("westBL", next.getSinglePrimitive());
+                }
+                if (DatasetFieldConstant.eastLongitude.equals(next.getTypeName())) {
+                    geoBndBoxMap.put("eastBL", next.getSinglePrimitive());
+                }
+                if (DatasetFieldConstant.northLatitude.equals(next.getTypeName())) {
+                    geoBndBoxMap.put("northBL", next.getSinglePrimitive());
+                }
+                if (DatasetFieldConstant.southLatitude.equals(next.getTypeName())) {
+                    geoBndBoxMap.put("southBL", next.getSinglePrimitive());
+                }
+            }
+
+            /* Once again, order is important! */
+ /*
+                        <xs:sequence>
+                            <xs:element ref="westBL"/>
+                            <xs:element ref="eastBL"/>
+                            <xs:element ref="southBL"/>
+                            <xs:element ref="northBL"/>
+                        </xs:sequence>
+             */
+            if (geoBndBoxMap.get("westBL") != null) {
+                XmlWriterUtil.writeFullElement(xmlw, "westBL", geoBndBoxMap.get("westBL"));
+            }
+            if (geoBndBoxMap.get("eastBL") != null) {
+                XmlWriterUtil.writeFullElement(xmlw, "eastBL", geoBndBoxMap.get("eastBL"));
+            }
+            if (geoBndBoxMap.get("southBL") != null) {
+                XmlWriterUtil.writeFullElement(xmlw, "southBL", geoBndBoxMap.get("southBL"));
+            }
+            if (geoBndBoxMap.get("northBL") != null) {
+                XmlWriterUtil.writeFullElement(xmlw, "northBL", geoBndBoxMap.get("northBL"));
+            }
+
+            xmlw.writeEndElement();
+        }
+
+        /* analyUnit: */
+        if (unitOfAnalysisDTO != null) {
+            XmlWriterUtil.writeI18NElementList(xmlw, "anlyUnit", unitOfAnalysisDTO.getMultipleVocab(), "unitOfAnalysis", unitOfAnalysisDTO.getTypeClass(), "socialscience", lang);
+
+        }
+
+        /* universe: */
+        if (universeDTO != null) {
+            writeMultipleElement(xmlw, "universe", universeDTO, lang);
+        }
+
+        /* finally, any "kind of data" entries: */
+        if (kindOfDataDTO != null) {
+            writeMultipleElement(xmlw, "dataKind", kindOfDataDTO, lang);
+        }
+
         xmlw.writeEndElement(); //sumDscr     
     }
-    
-    private static void writeMultipleElement(XMLStreamWriter xmlw, String element, FieldDTO fieldDTO) throws XMLStreamException {
+
+    private static void writeMultipleElement(XMLStreamWriter xmlw, String element, FieldDTO fieldDTO, String lang) throws XMLStreamException {
         for (String value : fieldDTO.getMultiplePrimitive()) {
-            writeFullElement(xmlw, element, value);
+            //Write multiple lang vals for controlled vocab, otherwise don't include any lang tag
+            XmlWriterUtil.writeFullElement(xmlw, element, value, fieldDTO.isControlledVocabularyField() ? lang : null);
         }
     }
-    
+
     private static void writeDateElement(XMLStreamWriter xmlw, String element, String cycle, String event, String dateIn) throws XMLStreamException {
 
         xmlw.writeStartElement(element);
-        writeAttribute(xmlw, "cycle",  cycle);
-        writeAttribute(xmlw, "event", event);
-        writeAttribute(xmlw, "date", dateIn);
+        XmlWriterUtil.writeAttribute(xmlw, "cycle",  cycle);
+        XmlWriterUtil.writeAttribute(xmlw, "event", event);
+        XmlWriterUtil.writeAttribute(xmlw, "date", dateIn);
         xmlw.writeCharacters(dateIn);
         xmlw.writeEndElement(); 
 
     }
-    
+
+    /**
+     * Again, <dataColl> is an xs:sequence - order is important and must follow
+     * the schema. -L.A.
+     * <xs:sequence>
+     * <xs:element ref="timeMeth" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="dataCollector" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="collectorTraining" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="frequenc" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="sampProc" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="sampleFrame" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="targetSampleSize" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="deviat" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="collMode" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="resInstru" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="instrumentDevelopment" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="sources" minOccurs="0"/>
+     * <xs:element ref="collSitu" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="actMin" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="ConOps" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="weight" minOccurs="0" maxOccurs="unbounded"/>
+     * <xs:element ref="cleanOps" minOccurs="0" maxOccurs="unbounded"/>
+     * </xs:sequence>
+     */
     private static void writeMethodElement(XMLStreamWriter xmlw , DatasetVersionDTO version, String lang) throws XMLStreamException{
         xmlw.writeStartElement("method");
         xmlw.writeStartElement("dataColl");
-        writeI18NElement(xmlw, "timeMeth", version, DatasetFieldConstant.timeMethod,lang); 
-        writeFullElement(xmlw, "dataCollector", dto2Primitive(version, DatasetFieldConstant.dataCollector));         
-        writeFullElement(xmlw, "collectorTraining", dto2Primitive(version, DatasetFieldConstant.collectorTraining));   
-        writeFullElement(xmlw, "frequenc", dto2Primitive(version, DatasetFieldConstant.frequencyOfDataCollection));      
-        writeI18NElement(xmlw, "sampProc", version, DatasetFieldConstant.samplingProcedure, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "timeMeth", version, DatasetFieldConstant.timeMethod,lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "dataCollector", version, DatasetFieldConstant.dataCollector, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "collectorTraining", version, DatasetFieldConstant.collectorTraining, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "frequenc", version, DatasetFieldConstant.frequencyOfDataCollection, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "sampProc", version, DatasetFieldConstant.samplingProcedure, lang);
 
         writeTargetSampleElement(xmlw, version);
 
-        writeFullElement(xmlw, "deviat", dto2Primitive(version, DatasetFieldConstant.deviationsFromSampleDesign));
+        XmlWriterUtil.writeI18NElement(xmlw, "deviat", version, DatasetFieldConstant.deviationsFromSampleDesign, lang);
 
+        /* <collMode> comes before <sources>: */
+        FieldDTO collModeFieldDTO = dto2FieldDTO(version, DatasetFieldConstant.collectionMode, "socialscience");
+        if (collModeFieldDTO != null) {
+            // This field was made multiple as of 5.10
+            // Below is a backward compatibility check allowing export to work in 
+            // an instance where the metadata block has not been updated yet.
+            if (collModeFieldDTO.getMultiple()) {
+                XmlWriterUtil.writeI18NElementList(xmlw, "collMode", collModeFieldDTO.getMultipleVocab(), DatasetFieldConstant.collectionMode, collModeFieldDTO.getTypeClass(), "socialscience", lang);
+            } else {
+                XmlWriterUtil.writeI18NElement(xmlw, "collMode", version, DatasetFieldConstant.collectionMode, lang);
+            }
+        }
+        /* and so does <resInstru>: */
+        XmlWriterUtil.writeI18NElement(xmlw, "resInstru", version, DatasetFieldConstant.researchInstrument, lang);
         xmlw.writeStartElement("sources");
-        writeFullElementList(xmlw, "dataSrc", dto2PrimitiveList(version, DatasetFieldConstant.dataSources));
-        writeFullElement(xmlw, "srcOrig", dto2Primitive(version, DatasetFieldConstant.originOfSources));
-        writeFullElement(xmlw, "srcChar", dto2Primitive(version, DatasetFieldConstant.characteristicOfSources));
-        writeFullElement(xmlw, "srcDocu", dto2Primitive(version, DatasetFieldConstant.accessToSources));
+        XmlWriterUtil.writeFullElementList(xmlw, "dataSrc", dto2PrimitiveList(version, DatasetFieldConstant.dataSources));
+        XmlWriterUtil.writeI18NElement(xmlw, "srcOrig", version, DatasetFieldConstant.originOfSources, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "srcChar", version, DatasetFieldConstant.characteristicOfSources, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "srcDocu", version, DatasetFieldConstant.accessToSources, lang);
         xmlw.writeEndElement(); //sources
 
-        writeI18NElement(xmlw, "collMode", version, DatasetFieldConstant.collectionMode, lang); 
-        writeI18NElement(xmlw, "resInstru", version, DatasetFieldConstant.researchInstrument, lang); 
-        writeFullElement(xmlw, "collSitu", dto2Primitive(version, DatasetFieldConstant.dataCollectionSituation)); 
-        writeFullElement(xmlw, "actMin", dto2Primitive(version, DatasetFieldConstant.actionsToMinimizeLoss));
-        writeFullElement(xmlw, "conOps", dto2Primitive(version, DatasetFieldConstant.controlOperations));
-        writeFullElement(xmlw, "weight", dto2Primitive(version, DatasetFieldConstant.weighting));  
-        writeFullElement(xmlw, "cleanOps", dto2Primitive(version, DatasetFieldConstant.cleaningOperations));
+
+        XmlWriterUtil.writeI18NElement(xmlw, "collSitu", version, DatasetFieldConstant.dataCollectionSituation, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "actMin", version, DatasetFieldConstant.actionsToMinimizeLoss, lang);
+        /* "<ConOps>" has the uppercase C: */
+        XmlWriterUtil.writeI18NElement(xmlw, "ConOps", version, DatasetFieldConstant.controlOperations, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "weight", version, DatasetFieldConstant.weighting, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "cleanOps", version, DatasetFieldConstant.cleaningOperations, lang);
 
         xmlw.writeEndElement(); //dataColl
-        xmlw.writeStartElement("anlyInfo");
-        //writeFullElement(xmlw, "anylInfo", dto2Primitive(version, DatasetFieldConstant.datasetLevelErrorNotes));
-        writeFullElement(xmlw, "respRate", dto2Primitive(version, DatasetFieldConstant.responseRate));  
-        writeFullElement(xmlw, "EstSmpErr", dto2Primitive(version, DatasetFieldConstant.samplingErrorEstimates));
-        writeFullElement(xmlw, "dataAppr", dto2Primitive(version, DatasetFieldConstant.otherDataAppraisal)); 
-        xmlw.writeEndElement(); //anlyInfo
+        /* <notes> before <anlyInfo>: */
         writeNotesElement(xmlw, version);
-        
+
+        xmlw.writeStartElement("anlyInfo");
+        //XmlWriterUtil.writeFullElement(xmlw, "anylInfo", dto2Primitive(version, DatasetFieldConstant.datasetLevelErrorNotes));
+        XmlWriterUtil.writeI18NElement(xmlw, "respRate", version, DatasetFieldConstant.responseRate, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "EstSmpErr", version, DatasetFieldConstant.samplingErrorEstimates, lang);
+        XmlWriterUtil.writeI18NElement(xmlw, "dataAppr", version, DatasetFieldConstant.otherDataAppraisal, lang);
+        xmlw.writeEndElement(); //anlyInfo
+
         xmlw.writeEndElement();//method
     }
-    
+
     private static void writeSubjectElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO, String lang) throws XMLStreamException{ 
-        
+
         //Key Words and Topic Classification
-        
-        xmlw.writeStartElement("subject");        
+        Locale defaultLocale = Locale.getDefault();
+        xmlw.writeStartElement("subject");
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
             MetadataBlockDTO value = entry.getValue();
-            if ("citation".equals(key)) {
+            if (CITATION_BLOCK_NAME.equals(key)) {
                 for (FieldDTO fieldDTO : value.getFields()) {
-                    if (DatasetFieldConstant.subject.equals(fieldDTO.getTypeName())){
-                        writeI18NElementList(xmlw, "keyword", fieldDTO.getMultipleVocab(), "subject", fieldDTO.getTypeClass(), "citation", lang);
+                    if (DatasetFieldConstant.subject.equals(fieldDTO.getTypeName())) {
+                        XmlWriterUtil.writeI18NElementList(xmlw, "keyword", fieldDTO.getMultipleVocab(), "subject",
+                                fieldDTO.getTypeClass(), "citation", lang);
                     }
-                    
+
                     if (DatasetFieldConstant.keyword.equals(fieldDTO.getTypeName())) {
+                        boolean isCVV = false;
                         for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
                             String keywordValue = "";
                             String keywordVocab = "";
@@ -600,30 +847,49 @@ public class DdiExportUtil {
                             for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
                                 FieldDTO next = iterator.next();
                                 if (DatasetFieldConstant.keywordValue.equals(next.getTypeName())) {
-                                    keywordValue =  next.getSinglePrimitive();
+                                    if (next.isControlledVocabularyField()) {
+                                        isCVV = true;
+                                    }
+                                    keywordValue = next.getSinglePrimitive();
                                 }
                                 if (DatasetFieldConstant.keywordVocab.equals(next.getTypeName())) {
-                                    keywordVocab =  next.getSinglePrimitive();
+                                    keywordVocab = next.getSinglePrimitive();
                                 }
                                 if (DatasetFieldConstant.keywordVocabURI.equals(next.getTypeName())) {
-                                    keywordURI =  next.getSinglePrimitive();
+                                    keywordURI = next.getSinglePrimitive();
                                 }
                             }
-                            if (!keywordValue.isEmpty()){
-                                xmlw.writeStartElement("keyword"); 
-                                if(!keywordVocab.isEmpty()){
-                                   writeAttribute(xmlw,"vocab",keywordVocab); 
+                            if (!keywordValue.isEmpty()) {
+                                xmlw.writeStartElement("keyword");
+                                XmlWriterUtil.writeAttribute(xmlw, "vocab", keywordVocab);
+                                XmlWriterUtil.writeAttribute(xmlw, "vocabURI", keywordURI);
+                                if (lang != null && isCVV) {
+                                    XmlWriterUtil.writeAttribute(xmlw, "xml:lang", defaultLocale.getLanguage());
+                                    xmlw.writeCharacters(ControlledVocabularyValue.getLocaleStrValue(keywordValue,
+                                            DatasetFieldConstant.keywordValue, CITATION_BLOCK_NAME, defaultLocale,
+                                            true));
+                                } else {
+                                    xmlw.writeCharacters(keywordValue);
                                 }
-                                if(!keywordURI.isEmpty()){
-                                   writeAttribute(xmlw,"vocabURI",keywordURI);
-                                } 
-                                xmlw.writeCharacters(keywordValue);
-                                xmlw.writeEndElement(); //Keyword
+                                xmlw.writeEndElement(); // Keyword
+                                if (lang != null && isCVV && !defaultLocale.getLanguage().equals(lang)) {
+                                    String translatedValue = ControlledVocabularyValue.getLocaleStrValue(keywordValue,
+                                            DatasetFieldConstant.keywordValue, CITATION_BLOCK_NAME, new Locale(lang),
+                                            false);
+                                    if (translatedValue != null) {
+                                        xmlw.writeStartElement("keyword");
+                                        XmlWriterUtil.writeAttribute(xmlw, "vocab", keywordVocab);
+                                        XmlWriterUtil.writeAttribute(xmlw, "vocabURI", keywordURI);
+                                        XmlWriterUtil.writeAttribute(xmlw, "xml:lang", lang);
+                                        xmlw.writeCharacters(translatedValue);
+                                        xmlw.writeEndElement(); // Keyword
+                                    }
+                                }
                             }
-
                         }
                     }
                     if (DatasetFieldConstant.topicClassification.equals(fieldDTO.getTypeName())) {
+                        boolean isCVV = false;
                         for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
                             String topicClassificationValue = "";
                             String topicClassificationVocab = "";
@@ -631,34 +897,55 @@ public class DdiExportUtil {
                             for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
                                 FieldDTO next = iterator.next();
                                 if (DatasetFieldConstant.topicClassValue.equals(next.getTypeName())) {
-                                    topicClassificationValue =  next.getSinglePrimitive();
+                                    // Currently getSingleVocab() is the same as getSinglePrimitive() so this works
+                                    // for either case
+                                    topicClassificationValue = next.getSinglePrimitive();
+                                    if (next.isControlledVocabularyField()) {
+                                        isCVV = true;
+                                    }
                                 }
                                 if (DatasetFieldConstant.topicClassVocab.equals(next.getTypeName())) {
-                                    topicClassificationVocab =  next.getSinglePrimitive();
+                                    topicClassificationVocab = next.getSinglePrimitive();
                                 }
                                 if (DatasetFieldConstant.topicClassVocabURI.equals(next.getTypeName())) {
-                                    topicClassificationURI =  next.getSinglePrimitive();
+                                    topicClassificationURI = next.getSinglePrimitive();
                                 }
                             }
-                            if (!topicClassificationValue.isEmpty()){
-                                xmlw.writeStartElement("topcClas"); 
-                                if(!topicClassificationVocab.isEmpty()){
-                                   writeAttribute(xmlw,"vocab",topicClassificationVocab); 
-                                } 
-                                if(!topicClassificationURI.isEmpty()){
-                                   writeAttribute(xmlw,"vocabURI",topicClassificationURI);
-                                } 
-                                xmlw.writeCharacters(topicClassificationValue);
-                                xmlw.writeEndElement(); //topcClas
+                            if (!topicClassificationValue.isEmpty()) {
+                                xmlw.writeStartElement("topcClas");
+                                XmlWriterUtil.writeAttribute(xmlw, "vocab", topicClassificationVocab);
+                                XmlWriterUtil.writeAttribute(xmlw, "vocabURI", topicClassificationURI);
+                                if (lang != null && isCVV) {
+                                    XmlWriterUtil.writeAttribute(xmlw, "xml:lang", defaultLocale.getLanguage());
+                                    xmlw.writeCharacters(ControlledVocabularyValue.getLocaleStrValue(
+                                            topicClassificationValue, DatasetFieldConstant.topicClassValue,
+                                            CITATION_BLOCK_NAME, defaultLocale, true));
+                                } else {
+                                    xmlw.writeCharacters(topicClassificationValue);
+                                }
+                                xmlw.writeEndElement(); // topcClas
+                                if (lang != null && isCVV && !defaultLocale.getLanguage().equals(lang)) {
+                                    String translatedValue = ControlledVocabularyValue.getLocaleStrValue(
+                                            topicClassificationValue, DatasetFieldConstant.topicClassValue,
+                                            CITATION_BLOCK_NAME, new Locale(lang), false);
+                                    if (translatedValue != null) {
+                                        xmlw.writeStartElement("topcClas");
+                                        XmlWriterUtil.writeAttribute(xmlw, "vocab", topicClassificationVocab);
+                                        XmlWriterUtil.writeAttribute(xmlw, "vocabURI", topicClassificationURI);
+                                        XmlWriterUtil.writeAttribute(xmlw, "xml:lang", lang);
+                                        xmlw.writeCharacters(translatedValue);
+                                        xmlw.writeEndElement(); // topcClas
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        }        
+        }
         xmlw.writeEndElement(); // subject       
     }
-    
+
     private static void writeAuthorsElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
 
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
@@ -682,9 +969,7 @@ public class DdiExportUtil {
                             }
                             if (!authorName.isEmpty()){
                                 xmlw.writeStartElement("AuthEnty"); 
-                                if(!authorAffiliation.isEmpty()){
-                                   writeAttribute(xmlw,"affiliation",authorAffiliation); 
-                                } 
+                                XmlWriterUtil.writeAttribute(xmlw,"affiliation",authorAffiliation);
                                 xmlw.writeCharacters(authorName);
                                 xmlw.writeEndElement(); //AuthEnty
                             }
@@ -705,9 +990,7 @@ public class DdiExportUtil {
                             }
                             if (!contributorName.isEmpty()){
                                 xmlw.writeStartElement("othId");
-                                if(!contributorType.isEmpty()){
-                                    writeAttribute(xmlw,"role", contributorType);
-                                }
+                                XmlWriterUtil.writeAttribute(xmlw,"role", contributorType);
                                 xmlw.writeCharacters(contributorName);
                                 xmlw.writeEndElement(); //othId
                             }
@@ -719,7 +1002,7 @@ public class DdiExportUtil {
 
         }
     }
-    
+
     private static void writeContactsElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
 
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
@@ -747,12 +1030,8 @@ public class DdiExportUtil {
                             // TODO: Since datasetContactEmail is a required field but datasetContactName is not consider not checking if datasetContactName is empty so we can write out datasetContactEmail.
                             if (!datasetContactName.isEmpty()){
                                 xmlw.writeStartElement("contact"); 
-                                if(!datasetContactAffiliation.isEmpty()){
-                                   writeAttribute(xmlw,"affiliation",datasetContactAffiliation); 
-                                } 
-                                if(!datasetContactEmail.isEmpty()){
-                                   writeAttribute(xmlw,"email",datasetContactEmail); 
-                                } 
+                                XmlWriterUtil.writeAttribute(xmlw,"affiliation",datasetContactAffiliation);
+                                XmlWriterUtil.writeAttribute(xmlw,"email",datasetContactEmail);
                                 xmlw.writeCharacters(datasetContactName);
                                 xmlw.writeEndElement(); //AuthEnty
                             }
@@ -762,7 +1041,7 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static void writeProducersElement(XMLStreamWriter xmlw, DatasetVersionDTO version) throws XMLStreamException {
         xmlw.writeStartElement("prodStmt");
         for (Map.Entry<String, MetadataBlockDTO> entry : version.getMetadataBlocks().entrySet()) {
@@ -778,7 +1057,6 @@ public class DdiExportUtil {
                             String producerAffiliation = "";
                             String producerAbbreviation = "";
                             String producerLogo = "";
-                            String producerURL = "";
                             for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
                                 FieldDTO next = iterator.next();
                                 if (DatasetFieldConstant.producerName.equals(next.getTypeName())) {
@@ -793,42 +1071,36 @@ public class DdiExportUtil {
                                 if (DatasetFieldConstant.producerLogo.equals(next.getTypeName())) {
                                     producerLogo = next.getSinglePrimitive();
                                 }
-                                if (DatasetFieldConstant.producerURL.equals(next.getTypeName())) {
-                                    producerURL = next.getSinglePrimitive();
-
-                                }
                             }
                             if (!producerName.isEmpty()) {
                                 xmlw.writeStartElement("producer");
-                                if (!producerAffiliation.isEmpty()) {
-                                    writeAttribute(xmlw, "affiliation", producerAffiliation);
-                                }
-                                if (!producerAbbreviation.isEmpty()) {
-                                    writeAttribute(xmlw, "abbr", producerAbbreviation);
-                                }
-                                if (!producerLogo.isEmpty()) {
-                                    writeAttribute(xmlw, "role", producerLogo);
-                                }
-                                if (!producerURL.isEmpty()) {
-                                    writeAttribute(xmlw, "URI", producerURL);
-                                }
+                                XmlWriterUtil.writeAttribute(xmlw, "affiliation", producerAffiliation);
+                                XmlWriterUtil.writeAttribute(xmlw, "abbr", producerAbbreviation);
+                                //XmlWriterUtil.writeAttribute(xmlw, "role", producerLogo);
                                 xmlw.writeCharacters(producerName);
                                 xmlw.writeEndElement(); //AuthEnty
                             }
                         }
-                        
+
                     }
                 }
             }
         }
-        writeFullElement(xmlw, "prodDate", dto2Primitive(version, DatasetFieldConstant.productionDate));    
-        writeFullElement(xmlw, "prodPlac", dto2Primitive(version, DatasetFieldConstant.productionPlace));
+        XmlWriterUtil.writeFullElement(xmlw, "prodDate", XmlWriterUtil.dto2Primitive(version, DatasetFieldConstant.productionDate));
+        // productionPlace was made multiple as of 5.14:
+        // (a quick backward compatibility check was added to dto2PrimitiveList(),
+        // see the method for details)
+
+        FieldDTO  prodPlac = dto2FieldDTO( version, DatasetFieldConstant.productionPlace, "citation"  );
+        if (prodPlac != null) {
+            writeMultipleElement(xmlw, "prodPlac", prodPlac, null);
+        }
         writeSoftwareElement(xmlw, version);
-  
+
         writeGrantElement(xmlw, version);
         xmlw.writeEndElement(); //prodStmt
     }
-    
+
     private static void writeDistributorsElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO, String lang) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -842,7 +1114,6 @@ public class DdiExportUtil {
                             String distributorAffiliation = "";
                             String distributorAbbreviation = "";
                             String distributorURL = "";
-                            String distributorLogoURL = "";
                             for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
                                 FieldDTO next = iterator.next();
                                 if (DatasetFieldConstant.distributorName.equals(next.getTypeName())) {
@@ -857,27 +1128,15 @@ public class DdiExportUtil {
                                 if (DatasetFieldConstant.distributorURL.equals(next.getTypeName())) {
                                     distributorURL = next.getSinglePrimitive();
                                 }
-                                if (DatasetFieldConstant.distributorLogo.equals(next.getTypeName())) {
-                                    distributorLogoURL = next.getSinglePrimitive();
-                                }
                             }
                             if (!distributorName.isEmpty()) {
                                 xmlw.writeStartElement("distrbtr");
-                                if(isMetadataLanguageSet(lang)) {
-                                    writeAttribute(xmlw, "xml:lang", lang);
+                                if(DvObjectContainer.isMetadataLanguageSet(lang)) {
+                                    xmlw.writeAttribute("xml:lang", lang);
                                 }
-                                if (!distributorAffiliation.isEmpty()) {
-                                    writeAttribute(xmlw, "affiliation", distributorAffiliation);
-                                }
-                                if (!distributorAbbreviation.isEmpty()) {
-                                    writeAttribute(xmlw, "abbr", distributorAbbreviation);
-                                }
-                                if (!distributorURL.isEmpty()) {
-                                    writeAttribute(xmlw, "URI", distributorURL);
-                                }
-                                if (!distributorLogoURL.isEmpty()) {
-                                    writeAttribute(xmlw, "role", distributorLogoURL);
-                                }
+                                XmlWriterUtil.writeAttribute(xmlw, "affiliation", distributorAffiliation);
+                                XmlWriterUtil.writeAttribute(xmlw, "abbr", distributorAbbreviation);
+                                XmlWriterUtil.writeAttribute(xmlw, "URI", distributorURL);
                                 xmlw.writeCharacters(distributorName);
                                 xmlw.writeEndElement(); //AuthEnty
                             }
@@ -889,7 +1148,7 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static void writeRelPublElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -921,18 +1180,35 @@ public class DdiExportUtil {
                             if (citation != null && !citation.trim().equals("")) {
                                 xmlw.writeStartElement("relPubl");
                                 xmlw.writeStartElement("citation");
+                                /* <xs:sequence>
+                                    <xs:element ref="titlStmt"/>
+                                    <xs:element ref="rspStmt" minOccurs="0"/>
+                                    <xs:element ref="prodStmt" minOccurs="0"/>
+                                    <xs:element ref="distStmt" minOccurs="0"/>
+                                    <xs:element ref="serStmt" minOccurs="0" maxOccurs="unbounded"/>
+                                    <xs:element ref="verStmt" minOccurs="0" maxOccurs="unbounded"/>
+                                    <xs:element ref="biblCit" minOccurs="0" maxOccurs="unbounded"/>
+                                    <xs:element ref="holdings" minOccurs="0" maxOccurs="unbounded"/>
+                                    <xs:element ref="notes" minOccurs="0" maxOccurs="unbounded"/>
+                                    <xs:group ref="dc:elementsAndRefinementsGroup"/>
+                                   </xs:sequence>
+                                 (In other words - titlStmt is mandatory! -L.A.)
+                                */
+                                xmlw.writeStartElement("titlStmt");
+                                XmlWriterUtil.writeFullElement(xmlw, "titl", citation);
                                 if (IDNo != null && !IDNo.trim().equals("")) {
-                                    xmlw.writeStartElement("titlStmt");
+
                                     xmlw.writeStartElement("IDNo");
                                     if (IDType != null && !IDType.trim().equals("")) {
-                                        xmlw.writeAttribute("agency", IDType );
+                                        xmlw.writeAttribute("agency", IDType);
                                     }
                                     xmlw.writeCharacters(IDNo);
                                     xmlw.writeEndElement(); //IDNo
-                                    xmlw.writeEndElement(); // titlStmt
                                 }
+                                xmlw.writeEndElement(); // titlStmt
 
-                                writeFullElement(xmlw,"biblCit",citation);
+
+                                XmlWriterUtil.writeFullElement(xmlw,"biblCit",citation);
                                 xmlw.writeEndElement(); //citation
                                 if (url != null && !url.trim().equals("") ) {
                                     xmlw.writeStartElement("ExtLink");
@@ -947,7 +1223,7 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static String appendCommaSeparatedValue(String inVal, String next) {
         if (!next.isEmpty()) {
             if (!inVal.isEmpty()) {
@@ -958,7 +1234,7 @@ public class DdiExportUtil {
         }
         return inVal;
     }
-    
+
     private static void writeAbstractElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO, String lang) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -980,11 +1256,9 @@ public class DdiExportUtil {
                             }
                             if (!descriptionText.isEmpty()){
                                 xmlw.writeStartElement("abstract"); 
-                                if(!descriptionDate.isEmpty()){
-                                   writeAttribute(xmlw,"date",descriptionDate); 
-                                } 
-                                if(isMetadataLanguageSet(lang)) {
-                                    writeAttribute(xmlw, "xml:lang", lang);
+                                XmlWriterUtil.writeAttribute(xmlw,"date",descriptionDate);
+                                if(DvObjectContainer.isMetadataLanguageSet(lang)) {
+                                    xmlw.writeAttribute("xml:lang", lang);
                                 }
                                 xmlw.writeCharacters(descriptionText);
                                 xmlw.writeEndElement(); //abstract
@@ -1017,9 +1291,7 @@ public class DdiExportUtil {
                             }
                             if (!grantNumber.isEmpty()){
                                 xmlw.writeStartElement("grantNo"); 
-                                if(!grantAgency.isEmpty()){
-                                   writeAttribute(xmlw,"agency",grantAgency); 
-                                } 
+                                XmlWriterUtil.writeAttribute(xmlw,"agency",grantAgency);
                                 xmlw.writeCharacters(grantNumber);
                                 xmlw.writeEndElement(); //grantno
                             }
@@ -1029,7 +1301,7 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static void writeOtherIdElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -1051,9 +1323,7 @@ public class DdiExportUtil {
                             }
                             if (!otherId.isEmpty()){
                                 xmlw.writeStartElement("IDNo"); 
-                                if(!otherIdAgency.isEmpty()){
-                                   writeAttribute(xmlw,"agency",otherIdAgency); 
-                                } 
+                                XmlWriterUtil.writeAttribute(xmlw,"agency",otherIdAgency);
                                 xmlw.writeCharacters(otherId);
                                 xmlw.writeEndElement(); //IDNo
                             }
@@ -1063,7 +1333,7 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static void writeSoftwareElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -1085,9 +1355,7 @@ public class DdiExportUtil {
                             }
                             if (!softwareName.isEmpty()){
                                 xmlw.writeStartElement("software"); 
-                                if(!softwareVersion.isEmpty()){
-                                   writeAttribute(xmlw,"version",softwareVersion); 
-                                } 
+                                XmlWriterUtil.writeAttribute(xmlw,"version",softwareVersion);
                                 xmlw.writeCharacters(softwareName);
                                 xmlw.writeEndElement(); //software
                             }
@@ -1097,44 +1365,45 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     private static void writeSeriesElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
             MetadataBlockDTO value = entry.getValue();
-            if ("citation".equals(key)) {
+            if ("citation".equals(key)) {               
                 for (FieldDTO fieldDTO : value.getFields()) {
                     if (DatasetFieldConstant.series.equals(fieldDTO.getTypeName())) {
-                        xmlw.writeStartElement("serStmt");                        
                         String seriesName = "";
                         String seriesInformation = "";
-                        Set<FieldDTO> foo = fieldDTO.getSingleCompound();
+                        for (HashSet<FieldDTO> foo : fieldDTO.getMultipleCompound()) {
+                            xmlw.writeStartElement("serStmt");
                             for (Iterator<FieldDTO> iterator = foo.iterator(); iterator.hasNext();) {
                                 FieldDTO next = iterator.next();
                                 if (DatasetFieldConstant.seriesName.equals(next.getTypeName())) {
-                                    seriesName =  next.getSinglePrimitive();
+                                    seriesName = next.getSinglePrimitive();
                                 }
                                 if (DatasetFieldConstant.seriesInformation.equals(next.getTypeName())) {
-                                    seriesInformation =  next.getSinglePrimitive();
+                                    seriesInformation = next.getSinglePrimitive();
                                 }
                             }
-                            if (!seriesName.isEmpty()){
-                                xmlw.writeStartElement("serName"); 
+                            if (!seriesName.isEmpty()) {
+                                xmlw.writeStartElement("serName");
                                 xmlw.writeCharacters(seriesName);
-                                xmlw.writeEndElement(); //grantno
+                                xmlw.writeEndElement(); //serName
                             }
-                            if (!seriesInformation.isEmpty()){
-                                xmlw.writeStartElement("serInfo"); 
+                            if (!seriesInformation.isEmpty()) {
+                                xmlw.writeStartElement("serInfo");
                                 xmlw.writeCharacters(seriesInformation);
-                                xmlw.writeEndElement(); //grantno
+                                xmlw.writeEndElement(); //serInfo
                             }
-                        xmlw.writeEndElement(); //serStmt
+                            xmlw.writeEndElement(); //serStmt
+                        }
                     }
                 }
             }
         }
     }
-    
+
     private static void writeTargetSampleElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -1155,24 +1424,25 @@ public class DdiExportUtil {
                                 actualSize = next.getSinglePrimitive();
                             }
                         }
-
-                        if (!sizeFormula.isEmpty()) {
-                            xmlw.writeStartElement("sampleSizeFormula");
-                            xmlw.writeCharacters(sizeFormula);
-                            xmlw.writeEndElement(); //sampleSizeFormula
-                        }
+                        /* <sampleSize> must come before <sampleSizeFormula>! -L.A. */
                         if (!actualSize.isEmpty()) {
                             xmlw.writeStartElement("sampleSize");
                             xmlw.writeCharacters(actualSize);
                             xmlw.writeEndElement(); //sampleSize
                         }
+                        if (!sizeFormula.isEmpty()) {
+                            xmlw.writeStartElement("sampleSizeFormula");
+                            xmlw.writeCharacters(sizeFormula);
+                            xmlw.writeEndElement(); //sampleSizeFormula
+                        }
+
                         xmlw.writeEndElement(); // targetSampleSize
                     }
                 }
             }
         }
     }
-    
+
     private static void writeNotesElement(XMLStreamWriter xmlw, DatasetVersionDTO datasetVersionDTO) throws XMLStreamException {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             String key = entry.getKey();
@@ -1198,12 +1468,8 @@ public class DdiExportUtil {
                         }
                         if (!notesText.isEmpty()) {
                             xmlw.writeStartElement("notes");
-                                if(!notesType.isEmpty()){
-                                   writeAttribute(xmlw,"type",notesType); 
-                                } 
-                                if(!notesSubject.isEmpty()){
-                                   writeAttribute(xmlw,"subject",notesSubject); 
-                                } 
+                            XmlWriterUtil.writeAttribute(xmlw,"type",notesType);
+                            XmlWriterUtil.writeAttribute(xmlw,"subject",notesSubject);
                             xmlw.writeCharacters(notesText);
                             xmlw.writeEndElement(); 
                         }
@@ -1212,29 +1478,29 @@ public class DdiExportUtil {
             }
         }
     }
-    
+
     // TODO: 
     // see if there's more information that we could encode in this otherMat. 
     // contentType? Unfs and such? (in the "short" DDI that is being used for 
     // harvesting *all* files are encoded as otherMats; even tabular ones.
-    private static void createOtherMats(XMLStreamWriter xmlw, List<FileDTO> fileDtos) throws XMLStreamException {
+    private static void createOtherMats(XMLStreamWriter xmlw, List<FileDTO> fileDtos, boolean skipTabularFiles) throws XMLStreamException {
         // The preferred URL for this dataverse, for cooking up the file access API links:
-        String dataverseUrl = getDataverseSiteUrl();
-        
+        String dataverseUrl = SystemConfig.getDataverseSiteUrlStatic();
+
         for (FileDTO fileDTo : fileDtos) {
             // We'll continue using the scheme we've used before, in DVN2-3: non-tabular files are put into otherMat,
             // tabular ones - in fileDscr sections. (fileDscr sections have special fields for numbers of variables
             // and observations, etc.)
-            if (fileDTo.getDataFile().getDataTables() == null || fileDTo.getDataFile().getDataTables().isEmpty()) {
+            if (!(skipTabularFiles && isTabularData(fileDTo))) {
                 xmlw.writeStartElement("otherMat");
-                writeAttribute(xmlw, "ID", "f" + fileDTo.getDataFile().getId());
+                XmlWriterUtil.writeAttribute(xmlw, "ID", "f" + fileDTo.getDataFile().getId());
                 String pidURL = fileDTo.getDataFile().getPidURL();
                 if (pidURL != null && !pidURL.isEmpty()){
-                    writeAttribute(xmlw, "URI", pidURL);
+                    xmlw.writeAttribute("URI", pidURL);
                 } else {
-                    writeAttribute(xmlw, "URI", dataverseUrl + "/api/access/datafile/" + fileDTo.getDataFile().getId());
+                    xmlw.writeAttribute("URI", dataverseUrl + "/api/access/datafile/" + fileDTo.getDataFile().getId());
                 }
-                writeAttribute(xmlw, "level", "datafile");
+                xmlw.writeAttribute("level", "datafile");
                 xmlw.writeStartElement("labl");
                 xmlw.writeCharacters(fileDTo.getDataFile().getFilename());
                 xmlw.writeEndElement(); // labl
@@ -1245,9 +1511,9 @@ public class DdiExportUtil {
                 String contentType = fileDTo.getDataFile().getContentType();
                 if (!StringUtilisEmpty(contentType)) {
                     xmlw.writeStartElement("notes");
-                    writeAttribute(xmlw, "level", LEVEL_FILE);
-                    writeAttribute(xmlw, "type", NOTE_TYPE_CONTENTTYPE);
-                    writeAttribute(xmlw, "subject", NOTE_SUBJECT_CONTENTTYPE);
+                    xmlw.writeAttribute("level", LEVEL_FILE);
+                    xmlw.writeAttribute("type", NOTE_TYPE_CONTENTTYPE);
+                    xmlw.writeAttribute("subject", NOTE_SUBJECT_CONTENTTYPE);
                     xmlw.writeCharacters(contentType);
                     xmlw.writeEndElement(); // notes
                 }
@@ -1255,208 +1521,52 @@ public class DdiExportUtil {
             }
         }
     }
-    
-    // An alternative version of the createOtherMats method - this one is used 
-    // when a "full" DDI is being cooked; just like the fileDscr and data/var sections methods, 
-    // it operates on the list of FileMetadata entities, not on File DTOs. This is because
-    // DTOs do not support "tabular", variable-level metadata yet. And we need to be able to 
-    // tell if this file is in fact tabular data - so that we know if it needs an
-    // otherMat, or a fileDscr section. 
-    // -- L.A. 4.5 
-    
-    private static void createOtherMatsFromFileMetadatas(XMLStreamWriter xmlw, List<FileMetadata> fileMetadatas) throws XMLStreamException {
-        // The preferred URL for this dataverse, for cooking up the file access API links:
-        String dataverseUrl = getDataverseSiteUrl();
-        
-        for (FileMetadata fileMetadata : fileMetadatas) {
-            // We'll continue using the scheme we've used before, in DVN2-3: non-tabular files are put into otherMat,
-            // tabular ones - in fileDscr sections. (fileDscr sections have special fields for numbers of variables
-            // and observations, etc.)
-            if (fileMetadata.getDataFile() != null && !fileMetadata.getDataFile().isTabularData()) {
-                xmlw.writeStartElement("otherMat");
-                writeAttribute(xmlw, "ID", "f" + fileMetadata.getDataFile().getId());
-                String dfIdentifier = fileMetadata.getDataFile().getIdentifier();
-                if (dfIdentifier != null && !dfIdentifier.isEmpty()){
-                    GlobalId globalId = new GlobalId(fileMetadata.getDataFile());
-                    writeAttribute(xmlw, "URI",  globalId.toURL().toString()); 
-                }  else {
-                    writeAttribute(xmlw, "URI", dataverseUrl + "/api/access/datafile/" + fileMetadata.getDataFile().getId()); 
-                }
 
-                writeAttribute(xmlw, "level", "datafile");
-                xmlw.writeStartElement("labl");
-                xmlw.writeCharacters(fileMetadata.getLabel());
-                xmlw.writeEndElement(); // labl
-                
-                String description = fileMetadata.getDescription();
-                if (description != null) {
-                    xmlw.writeStartElement("txt");
-                    xmlw.writeCharacters(description);
-                    xmlw.writeEndElement(); // txt
-                }
-                // there's no readily available field in the othermat section 
-                // for the content type (aka mime type); so we'll store it in this
-                // specially formatted notes section:
-                String contentType = fileMetadata.getDataFile().getContentType();
-                if (!StringUtilisEmpty(contentType)) {
-                    xmlw.writeStartElement("notes");
-                    writeAttribute(xmlw, "level", LEVEL_FILE);
-                    writeAttribute(xmlw, "type", NOTE_TYPE_CONTENTTYPE);
-                    writeAttribute(xmlw, "subject", NOTE_SUBJECT_CONTENTTYPE);
-                    xmlw.writeCharacters(contentType);
-                    xmlw.writeEndElement(); // notes
-                }
-                xmlw.writeEndElement(); // otherMat
-            }
-        }
-    }
-    
     private static void writeFileDescription(XMLStreamWriter xmlw, FileDTO fileDTo) throws XMLStreamException {
-        xmlw.writeStartElement("txt");
         String description = fileDTo.getDataFile().getDescription();
         if (description != null) {
+            xmlw.writeStartElement("txt");
+
             xmlw.writeCharacters(description);
+            xmlw.writeEndElement(); // txt
+
         }
-        xmlw.writeEndElement(); // txt
     }
-    
-    private static String dto2Primitive(DatasetVersionDTO datasetVersionDTO, String datasetFieldTypeName) {
-        for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
-            MetadataBlockDTO value = entry.getValue();
-            for (FieldDTO fieldDTO : value.getFields()) {
-                if (datasetFieldTypeName.equals(fieldDTO.getTypeName())) {
-                    return fieldDTO.getSinglePrimitive();
-                }
-            }
-        }
-        return null;
-    }
-    
-    private static String dto2Primitive(DatasetVersionDTO datasetVersionDTO, String datasetFieldTypeName, Locale locale) {
-        for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
-            MetadataBlockDTO value = entry.getValue();
-            for (FieldDTO fieldDTO : value.getFields()) {
-                if (datasetFieldTypeName.equals(fieldDTO.getTypeName())) {
-                    String rawVal = fieldDTO.getSinglePrimitive();
-                    if (fieldDTO.getTypeClass().equals("controlledVocabulary")) {
-                        return ControlledVocabularyValue.getLocaleStrValue(rawVal, datasetFieldTypeName, value.getName(),
-                                locale, false);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-    
+
+
+
     private static List<String> dto2PrimitiveList(DatasetVersionDTO datasetVersionDTO, String datasetFieldTypeName) {
         for (Map.Entry<String, MetadataBlockDTO> entry : datasetVersionDTO.getMetadataBlocks().entrySet()) {
             MetadataBlockDTO value = entry.getValue();
             for (FieldDTO fieldDTO : value.getFields()) {
                 if (datasetFieldTypeName.equals(fieldDTO.getTypeName())) {
-                    return fieldDTO.getMultiplePrimitive();
+                    // This hack is here to make sure the export does not blow 
+                    // up on an instance that upgraded to a Dataverse version
+                    // where a certain primitive has been made multiple, but has
+                    // not yet update the block. 
+                    if (fieldDTO.getMultiple() != null && fieldDTO.getMultiple()) {
+                        return fieldDTO.getMultiplePrimitive();
+                    } else {
+                        return Arrays.asList(fieldDTO.getSinglePrimitive());
+                    }
                 }
             }
         }
         return null;
     }
 
-    private static void writeFullElementList(XMLStreamWriter xmlw, String name, List<String> values) throws XMLStreamException {
-        //For the simplest Elements we can 
-        if (values != null && !values.isEmpty()) {
-            for (String value : values) {
-                xmlw.writeStartElement(name);
-                xmlw.writeCharacters(value);
-                xmlw.writeEndElement(); // labl
-            }
-        }
-    }
-    
-    private static void writeI18NElementList(XMLStreamWriter xmlw, String name, List<String> values,
-            String fieldTypeName, String fieldTypeClass, String metadataBlockName, String lang)
-            throws XMLStreamException {
-
-        if (values != null && !values.isEmpty()) {
-            Locale defaultLocale = Locale.getDefault();
-            for (String value : values) {
-                if (fieldTypeClass.equals("controlledVocabulary")) {
-                    String localeVal = ControlledVocabularyValue.getLocaleStrValue(value, fieldTypeName, metadataBlockName, defaultLocale, false);
-                    if (localeVal != null) {
-                        
-                        value = localeVal;
-                        writeFullElement(xmlw, name, value, defaultLocale.getLanguage());
-                    } else {
-                        writeFullElement(xmlw, name, value);
-                    }
-                } else {
-                    writeFullElement(xmlw, name, value);
-                }
-            }
-            if (lang != null && !defaultLocale.getLanguage().equals(lang)) {
-                // Get values in dataset metadata language
-                // Loop before testing fieldTypeClass to be ready for external CVV
-                for (String value : values) {
-                    if (fieldTypeClass.equals("controlledVocabulary")) {
-                        String localeVal = ControlledVocabularyValue.getLocaleStrValue(value, fieldTypeName, metadataBlockName, new Locale(lang), false);
-                        if (localeVal != null) {
-                            writeFullElement(xmlw, name, localeVal, lang);
-                        }
-                    }
+    private static FieldDTO dto2FieldDTO(DatasetVersionDTO datasetVersionDTO, String datasetFieldTypeName, String metadataBlockName) {
+        MetadataBlockDTO block = datasetVersionDTO.getMetadataBlocks().get(metadataBlockName);
+        if (block != null) {
+            for (FieldDTO fieldDTO : block.getFields()) {
+                if (datasetFieldTypeName.equals(fieldDTO.getTypeName())) {
+                    return fieldDTO;
                 }
             }
         }
-    }
-    
-    private static void writeI18NElement(XMLStreamWriter xmlw, String name, DatasetVersionDTO version,
-            String fieldTypeName, String lang) throws XMLStreamException {
-        // Get the default value
-        String val = dto2Primitive(version, fieldTypeName);
-        Locale defaultLocale = Locale.getDefault();
-        // Get the language-specific value for the default language
-        String localeVal = dto2Primitive(version, fieldTypeName, defaultLocale);
-        String requestedLocaleVal = null;
-        if (lang != null && !defaultLocale.getLanguage().equals(lang)) {
-            // Also get the value in the requested locale/lang if that's not the default
-            // lang.
-            requestedLocaleVal = dto2Primitive(version, fieldTypeName, new Locale(lang));
-        }
-        // FWIW locale-specific vals will only be non-null for CVV values (at present)
-        if (localeVal == null && requestedLocaleVal == null) {
-            // Not CVV/no translations so print without lang tag
-            writeFullElement(xmlw, name, val);
-        } else {
-            // Print in either/both languages if we have values
-            if (localeVal != null) {
-                // Print the value for the default locale with it's own lang tag
-                writeFullElement(xmlw, name, localeVal, defaultLocale.getLanguage());
-            }
-            // Also print in the request lang (i.e. the metadata language for the dataset) if a value exists, print it with a lang tag
-            if (requestedLocaleVal != null) {
-                writeFullElement(xmlw, name, requestedLocaleVal, lang);
-            }
-        }
+        return null;
     }
 
-    private static void writeFullElement(XMLStreamWriter xmlw, String name, String value) throws XMLStreamException {
-        writeFullElement(xmlw, name, value, null);
-    }
-        
-    private static void writeFullElement (XMLStreamWriter xmlw, String name, String value, String lang) throws XMLStreamException {
-        //For the simplest Elements we can 
-        if (!StringUtilisEmpty(value)) {
-            xmlw.writeStartElement(name);
-            if(isMetadataLanguageSet(lang)) {
-                writeAttribute(xmlw, "xml:lang", lang);
-            }
-            xmlw.writeCharacters(value);
-            xmlw.writeEndElement(); // labl
-        }
-    }
-
-    private static void writeAttribute(XMLStreamWriter xmlw, String name, String value) throws XMLStreamException {
-        if (!StringUtilisEmpty(value)) {
-            xmlw.writeAttribute(name, value);
-        }
-    }
 
     private static boolean StringUtilisEmpty(String str) {
         if (str == null || str.trim().equals("")) {
@@ -1468,37 +1578,10 @@ public class DdiExportUtil {
     private static void saveJsonToDisk(String datasetVersionAsJson) throws IOException {
         Files.write(Paths.get("/tmp/out.json"), datasetVersionAsJson.getBytes());
     }
-    
-    /**
-     * The "official", designated URL of the site;
-     * can be defined as a complete URL; or derived from the 
-     * "official" hostname. If none of these options is set,
-     * defaults to the InetAddress.getLocalHOst() and https;
-     */
-    private static String getDataverseSiteUrl() {
-        String hostUrl = System.getProperty(SITE_URL);
-        if (hostUrl != null && !"".equals(hostUrl)) {
-            return hostUrl;
-        }
-        String hostName = System.getProperty(FQDN);
-        if (hostName == null) {
-            try {
-                hostName = InetAddress.getLocalHost().getCanonicalHostName();
-            } catch (UnknownHostException e) {
-                hostName = null;
-            }
-        }
-        
-        if (hostName != null) {
-            return "https://" + hostName;
-        }
-        
-        return "http://localhost:8080";
-    }
-    
-    
-    
-    
+
+
+
+
     // Methods specific to the tabular data ("<dataDscr>") section. 
     // Note that these do NOT operate on DTO objects, but instead directly 
     // on Dataverse DataVariable, DataTable, etc. objects. 
@@ -1510,19 +1593,19 @@ public class DdiExportUtil {
     // can go through the same DTO state... But we don't have time for it now; 
     // plus, the structure of file-level metadata is currently being re-designed, 
     // so we probably should not invest any time into it right now). -- L.A. 4.5
-    
-    public static void createDataDscr(XMLStreamWriter xmlw, DatasetVersion datasetVersion) throws XMLStreamException {
 
-        if (datasetVersion.getFileMetadatas() == null || datasetVersion.getFileMetadatas().isEmpty()) {
+    public static void createDataDscr(XMLStreamWriter xmlw, JsonArray fileDetails) throws XMLStreamException {
+
+        if (fileDetails.isEmpty()) {
             return;
         }
 
-        boolean tabularData = false;
+        boolean dataDscrWritten = false;
 
         // we're not writing the opening <dataDscr> tag until we find an actual 
         // tabular datafile.
-        for (FileMetadata fileMetadata : datasetVersion.getFileMetadatas()) {
-            DataFile dataFile = fileMetadata.getDataFile();
+        for (int i=0;i<fileDetails.size();i++) {
+            JsonObject fileJson = fileDetails.getJsonObject(i);
 
             /**
              * Previously (in Dataverse 5.3 and below) the dataDscr section was
@@ -1531,133 +1614,242 @@ public class DdiExportUtil {
              * should instead use the "Data Variable Metadata Access" endpoint.)
              * These days we skip restricted files to avoid this exposure.
              */
-            if (dataFile.isRestricted()|| FileUtil.isActivelyEmbargoed(dataFile)) {
+            if (isFileRestricted(fileJson)) {
                 continue;
             }
 
-            if (dataFile != null && dataFile.isTabularData()) {
-                if (!tabularData) {
+            if (fileJson.containsKey("dataTables")) {
+                if (!dataDscrWritten) {
                     xmlw.writeStartElement("dataDscr");
-                    tabularData = true;
-                }
-                for (VarGroup varGrp : fileMetadata.getVarGroups()) {
-                    createVarGroupDDI(xmlw, varGrp);
+                    dataDscrWritten = true;
                 }
 
-                List<DataVariable> vars = dataFile.getDataTable().getDataVariables();
-
-                for (DataVariable var : vars) {
-                    createVarDDI(xmlw, var, fileMetadata);
-                }
+                createVariablesForDataFile(xmlw, fileJson);
             }
         }
 
-        if (tabularData) {
+        if (dataDscrWritten) {
             xmlw.writeEndElement(); // dataDscr
         }
     }
-    private static void createVarGroupDDI(XMLStreamWriter xmlw, VarGroup varGrp) throws XMLStreamException {
+
+    private static void createDataDscrInBatches(XMLStreamWriter xmlw, List<Integer> varQuantityMap, ExportDataProvider exportDataProvider) throws XMLStreamException {
+        createDataDscrInBatches(xmlw, varQuantityMap, exportDataProvider, DATAVARIABLES_BATCH_SIZE);
+    }
+
+    /**
+     * 
+     * This public version of the method exists solely so that it can be called 
+     * with a custom batch size; primarily for tests.
+     * @param xmlw XML stream writer
+     * @varQuantityMap mapping of ordered datatables -> number of variables in each
+     * @exportDataProvider data provider instance
+     * @variablesBatchSize number of variables to use in forming processing batches
+    */
+    public static void createDataDscrInBatches(XMLStreamWriter xmlw, List<Integer> varQuantityMap, ExportDataProvider exportDataProvider, int variablesBatchSize) throws XMLStreamException {
+        boolean dataDscrWritten = false;
+
+        try {
+            int dataTableStart = 0;
+            int dataTablesThisBatch = 0;
+            int varQuantityThisBatch = 0;
+
+            for (int dataTableCurrent = 0; dataTableCurrent < varQuantityMap.size(); dataTableCurrent++) {
+                varQuantityThisBatch += varQuantityMap.get(dataTableCurrent);
+                dataTablesThisBatch++; 
+
+                if (varQuantityThisBatch >= variablesBatchSize || dataTableCurrent == varQuantityMap.size() - 1) {
+                    FileExportQuery exportQuery = FileExportQuery.builder()
+                            .addFilePredicate(FileMetadataPredicates.ONLY_PUBLIC_FILES)
+                            .addFilePredicate(FileMetadataPredicates.ONLY_TABULAR_FILES)
+                            .addFilePredicate(FileMetadataPredicates.INCLUDE_TABULAR_DATA_VARIABLES)
+                            .build();
+                    PageRequest paginationRequest = PageRequest.of(dataTableStart, dataTablesThisBatch);
+                    Stream<JsonObject> tabularFileDetails = exportDataProvider.getDatasetFileDetails(exportQuery, paginationRequest);
+                    logger.fine("total number of variables in this batch: " + varQuantityThisBatch);
+
+                    int count = 0;
+                    Iterator<JsonObject> it = tabularFileDetails.iterator();
+                    while (it.hasNext()) {
+                        JsonObject fileJson = it.next();
+
+                        if (isFileRestricted(fileJson)) {
+                            // This should not really happen - since we are explicitly
+                            // requesting public files only; but, better safe ...
+                            continue;
+                        }
+
+                        if (fileJson.containsKey("dataTables")) {
+                            if (!dataDscrWritten) {
+                                xmlw.writeStartElement("dataDscr");
+                                dataDscrWritten = true;
+                            }
+
+                            int howmany = createVariablesForDataFile(xmlw, fileJson);
+                            // let's confirm here that the number of variables
+                            // we got is what we expected; a mismatch here would 
+                            // indicate that the dataset and/or files in it have 
+                            // somehow changed since the initial lookup, and therefore 
+                            // the export should be aborted. 
+                            int howmanyExpected = varQuantityMap.get(dataTableStart + count);
+                            if (howmanyExpected != howmany) {
+                                throw new XMLStreamException("Number of variables mismatch. Expected: "
+                                        + howmanyExpected
+                                        + "; processed from datatable: "
+                                        + howmany); 
+                            }
+                        }
+                        count++;
+                    }
+
+                    logger.fine("requested: " + dataTablesThisBatch + " tabular file data entries; retrieved: " + count);
+
+
+                    dataTableStart += dataTablesThisBatch; 
+                    dataTablesThisBatch = 0; 
+                    varQuantityThisBatch = 0;
+                }
+            }
+            if (dataDscrWritten) {
+                xmlw.writeEndElement(); // dataDscr
+            }
+
+        } catch (ExportException ee) {
+            if (dataDscrWritten) {
+                // Unfortunately, we've already written some output by the time 
+                // this exception was caught. We have no other choice but to 
+                // give up
+                throw new XMLStreamException("Failed to write dataDscr variable-level section using exportDataProvider.getTabularData()");
+            } else {
+                // Looks like we haven't written anything out yet. We can try 
+                // and produce the dataDscr section using the classic, "all-at-once" 
+                // approach instead. 
+                createDataDscr(xmlw, exportDataProvider.getDatasetFileDetails());
+            }
+        }
+    }
+
+    private static int createVariablesForDataFile(XMLStreamWriter xmlw, JsonObject fileJson) throws XMLStreamException {
+        if (fileJson.containsKey("varGroups")) {
+            JsonArray varGroups = fileJson.getJsonArray("varGroups");
+            for (int j = 0; j < varGroups.size(); j++) {
+                createVarGroupDDI(xmlw, varGroups.getJsonObject(j));
+            }
+        }
+        JsonObject dataTable = fileJson.getJsonArray("dataTables").getJsonObject(0);
+        JsonArray vars = dataTable.getJsonArray("dataVariables");
+        logger.fine(vars.size() + " variables retrieved for file " + fileJson.getJsonNumber("id"));
+        if (vars != null) {
+            for (int j = 0; j < vars.size(); j++) {
+                createVarDDI(xmlw, vars.getJsonObject(j), fileJson.getJsonNumber("id").toString(),
+                        fileJson.getJsonNumber("fileMetadataId").toString());
+            }
+        }
+        return vars.size();
+    }
+
+    private static void createVarGroupDDI(XMLStreamWriter xmlw, JsonObject varGrp) throws XMLStreamException {
         xmlw.writeStartElement("varGrp");
-        writeAttribute(xmlw, "ID", "VG" + varGrp.getId().toString());
+        xmlw.writeAttribute("ID", "VG" + varGrp.getJsonNumber("id").toString());
         String vars = "";
-        Set<DataVariable> varsInGroup = varGrp.getVarsInGroup();
-        for (DataVariable var : varsInGroup) {
-            vars = vars + " v" + var.getId();
+        JsonArray varsInGroup = varGrp.getJsonArray("dataVariableIds");
+        for (int j=0;j<varsInGroup.size();j++){
+            vars = vars + " v" + varsInGroup.getString(j);
         }
         vars = vars.trim();
-        writeAttribute(xmlw, "var", vars );
+        XmlWriterUtil.writeAttribute(xmlw, "var", vars );
 
 
-        if (!StringUtilisEmpty(varGrp.getLabel())) {
+        if (varGrp.containsKey("label")) {
             xmlw.writeStartElement("labl");
-            xmlw.writeCharacters(varGrp.getLabel());
+            xmlw.writeCharacters(varGrp.getString("label"));
             xmlw.writeEndElement(); // group label (labl)
         }
 
         xmlw.writeEndElement(); //varGrp
     }
-    
-    private static void createVarDDI(XMLStreamWriter xmlw, DataVariable dv, FileMetadata fileMetadata) throws XMLStreamException {
-        xmlw.writeStartElement("var");
-        writeAttribute(xmlw, "ID", "v" + dv.getId().toString());
-        writeAttribute(xmlw, "name", dv.getName());
 
-        VariableMetadata vm = null;
-        for (VariableMetadata vmIter : dv.getVariableMetadatas()) {
-            FileMetadata fm = vmIter.getFileMetadata();
-            if (fm != null && fm.equals(fileMetadata) ){
-                vm = vmIter;
+    private static void createVarDDI(XMLStreamWriter xmlw, JsonObject dvar, String fileId, String fileMetadataId) throws XMLStreamException {
+        xmlw.writeStartElement("var");
+        xmlw.writeAttribute("ID", "v" + dvar.getJsonNumber("id").toString());
+        XmlWriterUtil.writeAttribute(xmlw, "name", dvar.getString("name"));
+
+        JsonObject vm = null;
+        JsonArray vmArray = dvar.getJsonArray("variableMetadata"); 
+        for (int i=0;i< vmArray.size();i++) {
+            JsonObject curVm =vmArray.getJsonObject(i); 
+            if (curVm.containsKey("fileMetadataId") && curVm.getString("fileMetadataId").equals(fileMetadataId) ){
+                vm = curVm;
                 break;
             }
         }
 
-        if (dv.getNumberOfDecimalPoints() != null) {
-            writeAttribute(xmlw, "dcml", dv.getNumberOfDecimalPoints().toString());
+        if (dvar.containsKey("numberOfDecimalPoints")) {
+            XmlWriterUtil.writeAttribute(xmlw, "dcml", dvar.getJsonNumber("numberOfDecimalPoints").toString());
         }
 
-        if (dv.isOrderedCategorical()) {
-            writeAttribute(xmlw, "nature", "ordinal");
+        if (dvar.getBoolean("isOrderedCategorical")) {
+            xmlw.writeAttribute("nature", "ordinal");
         }
 
-        if (dv.getInterval() != null) {
-            String interval = dv.getIntervalLabel();
-            if (interval != null) {
-                writeAttribute(xmlw, "intrvl", interval);
-            }
+        if (dvar.containsKey("variableIntervalType")) {
+            XmlWriterUtil.writeAttribute(xmlw, "intrvl", dvar.getString("variableIntervalType"));
         }
 
         if (vm != null) {
-            if (vm.isIsweightvar()) {
-                writeAttribute(xmlw, "wgt", "wgt");
+            if (vm.getBoolean("isWeightvar")) {
+                xmlw.writeAttribute("wgt", "wgt");
             }
-            if (vm.isWeighted() && vm.getWeightvariable() != null) {
-                writeAttribute(xmlw, "wgt-var", "v"+vm.getWeightvariable().getId().toString());
+            if (vm.containsKey("isWeighted") && vm.containsKey("weightVariableId")) {
+                xmlw.writeAttribute("wgt-var", "v"+vm.getString("weightVariableId"));
             }
         }
 
         // location
         xmlw.writeEmptyElement("location");
-        if (dv.getFileStartPosition() != null) {
-            writeAttribute(xmlw, "StartPos", dv.getFileStartPosition().toString());
+        if (dvar.containsKey("fileStartPosition")) {
+            XmlWriterUtil.writeAttribute(xmlw, "StartPos", dvar.getJsonNumber("fileStartPosition").toString());
         }
-        if (dv.getFileEndPosition() != null) {
-            writeAttribute(xmlw, "EndPos", dv.getFileEndPosition().toString());
+        if (dvar.containsKey("fileEndPosition")) {
+            XmlWriterUtil.writeAttribute(xmlw, "EndPos", dvar.getJsonNumber("fileEndPosition").toString());
         }
-        if (dv.getRecordSegmentNumber() != null) {
-            writeAttribute(xmlw, "RecSegNo", dv.getRecordSegmentNumber().toString());
+        if (dvar.containsKey("recordSegmentNumber")) {
+            XmlWriterUtil.writeAttribute(xmlw, "RecSegNo", dvar.getJsonNumber("recordSegmentNumber").toString());
         }
 
-        writeAttribute(xmlw, "fileid", "f" + dv.getDataTable().getDataFile().getId().toString());
+        xmlw.writeAttribute("fileid", "f" + fileId);
 
         // labl
-        if ((vm == null || StringUtilisEmpty(vm.getLabel())) && !StringUtilisEmpty(dv.getLabel())) {
+        if ((vm == null || !vm.containsKey("label"))) {
+            if(dvar.containsKey("label")) {
+                xmlw.writeStartElement("labl");
+                xmlw.writeAttribute("level", "variable");
+                xmlw.writeCharacters(dvar.getString("label"));
+                xmlw.writeEndElement(); //labl
+            }
+        } else {
             xmlw.writeStartElement("labl");
-            writeAttribute(xmlw, "level", "variable");
-            xmlw.writeCharacters(dv.getLabel());
-            xmlw.writeEndElement(); //labl
-        } else if (vm != null && !StringUtilisEmpty(vm.getLabel())) {
-            xmlw.writeStartElement("labl");
-            writeAttribute(xmlw, "level", "variable");
-            xmlw.writeCharacters(vm.getLabel());
+            xmlw.writeAttribute("level", "variable");
+            xmlw.writeCharacters(vm.getString("label"));
             xmlw.writeEndElement(); //labl
         }
 
         if (vm != null) {
-            if (!StringUtilisEmpty(vm.getLiteralquestion()) || !StringUtilisEmpty(vm.getInterviewinstruction()) || !StringUtilisEmpty(vm.getPostquestion())) {
+            if (vm.containsKey("literalQuestion") || vm.containsKey("interviewInstruction") || vm.containsKey("postQuestion")) {
                 xmlw.writeStartElement("qstn");
-                if (!StringUtilisEmpty(vm.getLiteralquestion())) {
+                if (vm.containsKey("literalQuestion")) {
                     xmlw.writeStartElement("qstnLit");
-                    xmlw.writeCharacters(vm.getLiteralquestion());
+                    xmlw.writeCharacters(vm.getString("literalQuestion"));
                     xmlw.writeEndElement(); // qstnLit
                 }
-                if (!StringUtilisEmpty(vm.getInterviewinstruction())) {
+                if (vm.containsKey("interviewInstruction")) {
                     xmlw.writeStartElement("ivuInstr");
-                    xmlw.writeCharacters(vm.getInterviewinstruction());
+                    xmlw.writeCharacters(vm.getString("interviewInstruction"));
                     xmlw.writeEndElement(); //ivuInstr
                 }
-                if (!StringUtilisEmpty(vm.getPostquestion())) {
+                if (vm.containsKey("postQuestion")) {
                     xmlw.writeStartElement("postQTxt");
-                    xmlw.writeCharacters(vm.getPostquestion());
+                    xmlw.writeCharacters(vm.getString("postQuestion"));
                     xmlw.writeEndElement(); //ivuInstr
                 }
                 xmlw.writeEndElement(); //qstn
@@ -1665,137 +1857,150 @@ public class DdiExportUtil {
         }
 
         // invalrng
-        boolean invalrngAdded = false;
-        for (VariableRange range : dv.getInvalidRanges()) {
-            //if (range.getBeginValueType() != null && range.getBeginValueType().getName().equals(DB_VAR_RANGE_TYPE_POINT)) {
-            if (range.getBeginValueType() != null && range.isBeginValueTypePoint()) {
-                if (range.getBeginValue() != null) {
-                    invalrngAdded = checkParentElement(xmlw, "invalrng", invalrngAdded);
-                    xmlw.writeEmptyElement("item");
-                    writeAttribute(xmlw, "VALUE", range.getBeginValue());
-                }
-            } else {
-                invalrngAdded = checkParentElement(xmlw, "invalrng", invalrngAdded);
-                xmlw.writeEmptyElement("range");
-                if (range.getBeginValueType() != null && range.getBeginValue() != null) {
-                    if (range.isBeginValueTypeMin()) {
-                        writeAttribute(xmlw, "min", range.getBeginValue());
-                    } else if (range.isBeginValueTypeMinExcl()) {
-                        writeAttribute(xmlw, "minExclusive", range.getBeginValue());
+        if (dvar.containsKey("invalidRanges")) {
+            boolean invalrngAdded = false;
+            JsonArray ranges = dvar.getJsonArray("invalidRanges");
+            for (int i = 0; i < ranges.size(); i++) {
+                JsonObject range = ranges.getJsonObject(0);
+                // if (range.getBeginValueType() != null &&
+                // range.getBeginValueType().getName().equals(DB_VAR_RANGE_TYPE_POINT)) {
+                if (range.getBoolean("hasBeginValueType") && range.getBoolean("isBeginValueTypePoint")) {
+                    if (range.containsKey("beginValue")) {
+                        invalrngAdded = XmlWriterUtil.writeOpenTagIfNeeded(xmlw, "invalrng", invalrngAdded);
+                        xmlw.writeEmptyElement("item");
+                        XmlWriterUtil.writeAttribute(xmlw, "VALUE", range.getString("beginValue"));
                     }
-                }
-                if (range.getEndValueType() != null && range.getEndValue() != null) {
-                    if (range.isEndValueTypeMax()) {
-                        writeAttribute(xmlw, "max", range.getEndValue());
-                    } else if (range.isEndValueTypeMaxExcl()) {
-                        writeAttribute(xmlw, "maxExclusive", range.getEndValue());
+                } else {
+                    invalrngAdded = XmlWriterUtil.writeOpenTagIfNeeded(xmlw, "invalrng", invalrngAdded);
+                    xmlw.writeEmptyElement("range");
+                    if (range.getBoolean("hasBeginValueType") && range.containsKey("beginValue")) {
+                        if (range.getBoolean("isBeginValueTypeMin")) {
+                            XmlWriterUtil.writeAttribute(xmlw, "min", range.getString("beginValue"));
+                        } else if (range.getBoolean("isBeginValueTypeMinExcl")) {
+                            XmlWriterUtil.writeAttribute(xmlw, "minExclusive", range.getString("beginValue"));
+                        }
+                    }
+                    if (range.getBoolean("hasEndValueType") && range.containsKey("endValue")) {
+                        if (range.getBoolean("isEndValueTypeMax")) {
+                            XmlWriterUtil.writeAttribute(xmlw, "max", range.getString("endValue"));
+                        } else if (range.getBoolean("isEndValueTypeMaxExcl")) {
+                            XmlWriterUtil.writeAttribute(xmlw, "maxExclusive", range.getString("endValue"));
+                        }
                     }
                 }
             }
-        }
-        if (invalrngAdded) {
-            xmlw.writeEndElement(); // invalrng
+            if (invalrngAdded) {
+                xmlw.writeEndElement(); // invalrng
+            }
         }
 
         //universe
         if (vm != null) {
-            if (!StringUtilisEmpty(vm.getUniverse())) {
+            if (vm.containsKey("universe")) {
                 xmlw.writeStartElement("universe");
-                xmlw.writeCharacters(vm.getUniverse());
+                xmlw.writeCharacters(vm.getString("universe"));
                 xmlw.writeEndElement(); //universe
             }
         }
 
-        //sum stats
-        for (SummaryStatistic sumStat : dv.getSummaryStatistics()) {
-            xmlw.writeStartElement("sumStat");
-            if (sumStat.getTypeLabel() != null) {
-                writeAttribute(xmlw, "type", sumStat.getTypeLabel());
-            } else {
-                writeAttribute(xmlw, "type", "unknown");
+        // sum stats
+        if (dvar.containsKey("summaryStatistics")) {
+            for (Entry<String, JsonValue> sumStat : dvar.getJsonObject("summaryStatistics").entrySet()) {
+                xmlw.writeStartElement("sumStat");
+                XmlWriterUtil.writeAttribute(xmlw, "type", sumStat.getKey());
+                xmlw.writeCharacters(((JsonString)sumStat.getValue()).getString());
+                xmlw.writeEndElement(); // sumStat
             }
-            xmlw.writeCharacters(sumStat.getValue());
-            xmlw.writeEndElement(); //sumStat
         }
 
         // categories
-        for (VariableCategory cat : dv.getCategories()) {
-            xmlw.writeStartElement("catgry");
-            if (cat.isMissing()) {
-                writeAttribute(xmlw, "missing", "Y");
-            }
-
-            // catValu
-            xmlw.writeStartElement("catValu");
-            xmlw.writeCharacters(cat.getValue());
-            xmlw.writeEndElement(); //catValu
-
-            // label
-            if (!StringUtilisEmpty(cat.getLabel())) {
-                xmlw.writeStartElement("labl");
-                writeAttribute(xmlw, "level", "category");
-                xmlw.writeCharacters(cat.getLabel());
-                xmlw.writeEndElement(); //labl
-            }
-
-            // catStat
-            if (cat.getFrequency() != null) {
-                xmlw.writeStartElement("catStat");
-                writeAttribute(xmlw, "type", "freq");
-                // if frequency is actually a long value, we want to write "100" instead of "100.0"
-                if (Math.floor(cat.getFrequency()) == cat.getFrequency()) {
-                    xmlw.writeCharacters(new Long(cat.getFrequency().longValue()).toString());
-                } else {
-                    xmlw.writeCharacters(cat.getFrequency().toString());
+        if (dvar.containsKey("variableCategories")) {
+            JsonArray varCats = dvar.getJsonArray("variableCategories");
+            for (int i = 0; i < varCats.size(); i++) {
+                JsonObject varCat = varCats.getJsonObject(i);
+                xmlw.writeStartElement("catgry");
+                if (varCat.getBoolean("isMissing")) {
+                    xmlw.writeAttribute("missing", "Y");
                 }
-                xmlw.writeEndElement(); //catStat
-            }
 
-            //catStat weighted freq
-            if (vm != null && vm.isWeighted()) {
-                for (CategoryMetadata cm : vm.getCategoriesMetadata()) {
-                    if (cm.getCategory().getValue().equals(cat.getValue())) {
-                        xmlw.writeStartElement("catStat");
-                        writeAttribute(xmlw, "wgtd", "wgtd");
-                        writeAttribute(xmlw, "type", "freq");
-                        xmlw.writeCharacters(cm.getWfreq().toString());
-                        xmlw.writeEndElement(); //catStat
-                        break;
+                // catValu
+                xmlw.writeStartElement("catValu");
+                xmlw.writeCharacters(varCat.getString("value"));
+                xmlw.writeEndElement(); // catValu
+
+                // label
+                if (varCat.containsKey("label")) {
+                    xmlw.writeStartElement("labl");
+                    xmlw.writeAttribute("level", "category");
+                    xmlw.writeCharacters(varCat.getString("label"));
+                    xmlw.writeEndElement(); // labl
+                }
+
+                // catStat
+                if (varCat.containsKey("frequency")) {
+                    xmlw.writeStartElement("catStat");
+                    xmlw.writeAttribute("type", "freq");
+                    Double freq = varCat.getJsonNumber("frequency").doubleValue();
+                    // if frequency is actually a long value, we want to write "100" instead of
+                    // "100.0"
+                    if (Math.floor(freq) == freq) {
+                        xmlw.writeCharacters(Long.valueOf(freq.longValue()).toString());
+                    } else {
+                        xmlw.writeCharacters(freq.toString());
+                    }
+                    xmlw.writeEndElement(); // catStat
+                }
+
+                // catStat weighted freq
+                if (vm != null && vm.getBoolean("isWeighted")) {
+                    JsonArray catMetas = vm.getJsonArray("categoryMetadatas");
+                    for (int j = 0; i < catMetas.size(); j++) {
+                        JsonObject cm = catMetas.getJsonObject(j);
+                        if (cm.getString("categoryValue").equals(varCat.getString("value"))) {
+                            xmlw.writeStartElement("catStat");
+                            xmlw.writeAttribute("wgtd", "wgtd");
+                            xmlw.writeAttribute("type", "freq");
+                            xmlw.writeCharacters(cm.getJsonNumber("wFreq").toString());
+                            xmlw.writeEndElement(); // catStat
+                            break;
+                        }
                     }
                 }
-            }
 
-            xmlw.writeEndElement(); //catgry
+                xmlw.writeEndElement(); // catgry
+            }
         }
 
 
         // varFormat
         xmlw.writeEmptyElement("varFormat");
-        if (dv.isTypeNumeric()) {
-            writeAttribute(xmlw, "type", "numeric");
-        } else if (dv.isTypeCharacter()) {
-            writeAttribute(xmlw, "type", "character");
+        if(dvar.containsKey("variableFormatType")) {
+            XmlWriterUtil.writeAttribute(xmlw, "type", dvar.getString("variableFormatType").toLowerCase());
         } else {
             throw new XMLStreamException("Illegal Variable Format Type!");
         }
-        writeAttribute(xmlw, "formatname", dv.getFormat());
+        if(dvar.containsKey("format")) {
+            XmlWriterUtil.writeAttribute(xmlw, "formatname", dvar.getString("format"));
+        }
         //experiment writeAttribute(xmlw, "schema", dv.getFormatSchema());
-        writeAttribute(xmlw, "category", dv.getFormatCategory());
+        if(dvar.containsKey("formatCategory")) {
+            XmlWriterUtil.writeAttribute(xmlw, "category", dvar.getString("formatCategory"));
+        }
 
         // notes
-        if (dv.getUnf() != null && !"".equals(dv.getUnf())) {
+        if (dvar.containsKey("UNF") && !dvar.getString("UNF").isBlank()) {
             xmlw.writeStartElement("notes");
-            writeAttribute(xmlw, "subject", "Universal Numeric Fingerprint");
-            writeAttribute(xmlw, "level", "variable");
-            writeAttribute(xmlw, "type", "Dataverse:UNF");
-            xmlw.writeCharacters(dv.getUnf());
+            xmlw.writeAttribute("subject", "Universal Numeric Fingerprint");
+            xmlw.writeAttribute("level", "variable");
+            xmlw.writeAttribute("type", "Dataverse:UNF");
+            xmlw.writeCharacters(dvar.getString("UNF"));
             xmlw.writeEndElement(); //notes
         }
 
         if (vm != null) {
-            if (!StringUtilisEmpty(vm.getNotes())) {
+            if (vm.containsKey("notes")) {
                 xmlw.writeStartElement("notes");
-                xmlw.writeCData(vm.getNotes());
+                xmlw.writeCData(vm.getString("notes"));
                 xmlw.writeEndElement(); //notes CDATA
             }
         }
@@ -1805,41 +2010,57 @@ public class DdiExportUtil {
         xmlw.writeEndElement(); //var
 
     }
-    
-    private static void createFileDscr(XMLStreamWriter xmlw, DatasetVersion datasetVersion) throws XMLStreamException {
-        String dataverseUrl = getDataverseSiteUrl();
-        for (FileMetadata fileMetadata : datasetVersion.getFileMetadatas()) {
-            DataFile dataFile = fileMetadata.getDataFile();
 
-            if (dataFile != null && dataFile.isTabularData()) {
-                DataTable dt = dataFile.getDataTable();
+    private static List<Integer> createFileDscrs(XMLStreamWriter xmlw, List<FileDTO> fileDtos) throws XMLStreamException {
+        List<Integer> ret = new ArrayList<>(); 
+
+        logger.fine("total " + fileDtos.size() + " file DTOs to process for fileDscr");
+        String dataverseUrl = SystemConfig.getDataverseSiteUrlStatic();
+        int counter = 0;
+        long totalVarQuantity = 0; 
+
+        for (FileDTO fileDTo : fileDtos) {
+            logger.fine("processing file " + fileDTo.getDataFile().getId());
+            if (isTabularData(fileDTo)) {
                 xmlw.writeStartElement("fileDscr");
-                writeAttribute(xmlw, "ID", "f" + dataFile.getId());
-                writeAttribute(xmlw, "URI", dataverseUrl + "/api/access/datafile/" + dataFile.getId());
+
+                xmlw.writeAttribute("ID", "f" + fileDTo.getDataFile().getId());
+                xmlw.writeAttribute("URI", dataverseUrl + "/api/access/datafile/" + fileDTo.getDataFile().getId());
 
                 xmlw.writeStartElement("fileTxt");
                 xmlw.writeStartElement("fileName");
-                xmlw.writeCharacters(fileMetadata.getLabel());
+                xmlw.writeCharacters(fileDTo.getDataFile().getFilename());
                 xmlw.writeEndElement(); // fileName
 
-                if (dt.getCaseQuantity() != null || dt.getVarQuantity() != null || dt.getRecordsPerCase() != null) {
+                DataTableDTO dataTableDTO = fileDTo.getDataFile().getDataTables().get(0);
+                if (dataTableDTO.getCaseQuantity() != null
+                        || dataTableDTO.getVarQuantity() != null
+                        || dataTableDTO.getRecordsPerCase() != null) {
                     xmlw.writeStartElement("dimensns");
 
-                    if (dt.getCaseQuantity() != null) {
+                    if (dataTableDTO.getCaseQuantity() != null) {
                         xmlw.writeStartElement("caseQnty");
-                        xmlw.writeCharacters(dt.getCaseQuantity().toString());
+                        xmlw.writeCharacters(dataTableDTO.getCaseQuantity().toString());
                         xmlw.writeEndElement(); // caseQnty
                     }
 
-                    if (dt.getVarQuantity() != null) {
+                    Long varQuantity = dataTableDTO.getVarQuantity(); 
+
+                    if (varQuantity != null) {
                         xmlw.writeStartElement("varQnty");
-                        xmlw.writeCharacters(dt.getVarQuantity().toString());
+                        xmlw.writeCharacters(dataTableDTO.getVarQuantity().toString());
                         xmlw.writeEndElement(); // varQnty
+                        totalVarQuantity += varQuantity;
+                        ret.add(varQuantity.intValue()); 
+                    } else {
+                        // Strictly speaking, this should never happen - Dataverse is 
+                        // supposed to know the number of variables in every ingested tabular file. 
+                        ret.add(0);
                     }
 
-                    if (dt.getRecordsPerCase() != null) {
+                    if (dataTableDTO.getRecordsPerCase() != null) {
                         xmlw.writeStartElement("recPrCas");
-                        xmlw.writeCharacters(dt.getRecordsPerCase().toString());
+                        xmlw.writeCharacters(dataTableDTO.getRecordsPerCase().toString());
                         xmlw.writeEndElement(); // recPrCas
                     }
 
@@ -1847,7 +2068,7 @@ public class DdiExportUtil {
                 }
 
                 xmlw.writeStartElement("fileType");
-                xmlw.writeCharacters(dataFile.getContentType());
+                xmlw.writeCharacters(fileDTo.getDataFile().getContentType());
                 xmlw.writeEndElement(); // fileType
 
                 xmlw.writeEndElement(); // fileTxt
@@ -1855,54 +2076,68 @@ public class DdiExportUtil {
                 // various notes:
                 // this specially formatted note section is used to store the UNF
                 // (Universal Numeric Fingerprint) signature:
-                if (dt.getUnf() != null && !dt.getUnf().equals("")) {
+                if (fileDTo.getDataFile().getUNF() != null && !fileDTo.getDataFile().getUNF().isBlank()) {
                     xmlw.writeStartElement("notes");
-                    writeAttribute(xmlw, "level", LEVEL_FILE);
-                    writeAttribute(xmlw, "type", NOTE_TYPE_UNF);
-                    writeAttribute(xmlw, "subject", NOTE_SUBJECT_UNF);
-                    xmlw.writeCharacters(dt.getUnf());
+                    xmlw.writeAttribute("level", LEVEL_FILE);
+                    xmlw.writeAttribute("type", NOTE_TYPE_UNF);
+                    xmlw.writeAttribute("subject", NOTE_SUBJECT_UNF);
+                    xmlw.writeCharacters(fileDTo.getDataFile().getUNF());
                     xmlw.writeEndElement(); // notes
                 }
 
-                if (dataFile.getTags() != null) {
-                    for (int i = 0; i < dataFile.getTags().size(); i++) {
+                // If any tabular tags are present, each is formatted in a 
+                // dedicated note:
+                //if (fileJson.containsKey("tabularTags")) {
+                if (fileDTo.getDataFile().getTabularTags() != null) {
+                    for (String tag : fileDTo.getDataFile().getTabularTags()) {
                         xmlw.writeStartElement("notes");
-                        writeAttribute(xmlw, "level", LEVEL_FILE);
-                        writeAttribute(xmlw, "type", NOTE_TYPE_TAG);
-                        writeAttribute(xmlw, "subject", NOTE_SUBJECT_TAG);
-                        xmlw.writeCharacters(dataFile.getTags().get(i).getTypeLabel());
+                        xmlw.writeAttribute("level", LEVEL_FILE);
+                        xmlw.writeAttribute("type", NOTE_TYPE_TAG);
+                        xmlw.writeAttribute("subject", NOTE_SUBJECT_TAG);
+                        xmlw.writeCharacters(tag);
                         xmlw.writeEndElement(); // notes
                     }
                 }
 
+                // Adding a dedicated node for the description entry (for 
+                // non-tabular files we format it under the <txt> field)
+                if (fileDTo.getDataFile().getDescription() != null) {
+                    xmlw.writeStartElement("notes");
+                    xmlw.writeAttribute("level", LEVEL_FILE);
+                    xmlw.writeAttribute("type", NOTE_TYPE_FILEDESCRIPTION);
+                    xmlw.writeAttribute("subject", NOTE_SUBJECT_FILEDESCRIPTION);
+                    xmlw.writeCharacters(fileDTo.getDataFile().getDescription());
+                    xmlw.writeEndElement(); // notes
+                }
+
                 // TODO: add the remaining fileDscr elements!
                 xmlw.writeEndElement(); // fileDscr
+                counter++;
             }
         }
-    }
-    
-    
-
-    private static boolean checkParentElement(XMLStreamWriter xmlw, String elementName, boolean elementAdded) throws XMLStreamException {
-        if (!elementAdded) {
-            xmlw.writeStartElement(elementName);
-        }
-
-        return true;
+        logger.fine("produced " + counter + " fileDscr entries; total number of variables found: " + totalVarQuantity);
+        return ret;
     }
 
     public static void datasetHtmlDDI(InputStream datafile, OutputStream outputStream) throws XMLStreamException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 
         try {
-            Document document;
-            InputStream  styleSheetInput = DdiExportUtil.class.getClassLoader().getResourceAsStream("edu/harvard/iq/dataverse/codebook2-0.xsl");
+            // Get secure DocumentBuilder from our utility class
+            DocumentBuilder builder = XmlUtil.getSecureDocumentBuilder();
+            if (builder == null) {
+                logger.severe("Could not create secure document builder");
+                return;
+            }
+            InputStream styleSheetInput = DdiExportUtil.class.getClassLoader().getResourceAsStream("edu/harvard/iq/dataverse/codebook2-0.xsl");
 
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            document = builder.parse(datafile);
+            Document document = builder.parse(datafile);
 
             // Use a Transformer for output
-            TransformerFactory tFactory = TransformerFactory.newInstance();
+            TransformerFactory tFactory = TransformerFactory.newDefaultInstance();
+            // Set secure processing feature
+            tFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            tFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+
             StreamSource stylesource = new StreamSource(styleSheetInput);
             Transformer transformer = tFactory.newTransformer(stylesource);
 
@@ -1915,24 +2150,48 @@ public class DdiExportUtil {
         } catch (TransformerException te) {
             // Error generated by the parser
             logger.severe("Transformation error" + "   " + te.getMessage());
-
         } catch (SAXException sxe) {
             // Error generated by this application
             // (or a parser-initialization error)
             logger.severe("SAX error " + sxe.getMessage());
-
-        } catch (ParserConfigurationException pce) {
-            // Parser with specified options can't be built
-            logger.severe("Parser configuration error " + pce.getMessage());
         } catch (IOException ioe) {
             // I/O error
             logger.warning("I/O error " + ioe.getMessage());
         }
-
     }
 
     public static void injectSettingsService(SettingsServiceBean settingsSvc) {
         settingsService=settingsSvc;
     }
+
+    private static boolean isTabularData(FileDTO fileDTO) {
+        return !(fileDTO.getDataFile().getDataTables() == null || fileDTO.getDataFile().getDataTables().isEmpty());
+    }
+
+    /**
+     * Previously (in Dataverse 5.3 and below) the dataDscr section was included
+     * for restricted files but that meant that summary statistics were exposed.
+     * (To get at these statistics, API users should instead use the "Data
+     * Variable Metadata Access" endpoint.) These days we skip restricted files
+     * to avoid this exposure.
+     * @param fileJson - a JsonObject representing one datafile/datatable-worth
+     *                   of tabular data. 
+     */
+    private static boolean isFileRestricted(JsonObject fileJson) {
+        if (fileJson.containsKey("restricted") && fileJson.getBoolean("restricted")) {
+            return true;
+        }
+        if (fileJson.containsKey("embargo")) {
+            String dateString = fileJson.getJsonObject("embargo").getString("dateAvailable");
+            LocalDate endDate = LocalDate.parse(dateString);
+            if (endDate != null && endDate.isAfter(LocalDate.now())) {
+                //Embargo is active so skip
+                return true;
+            }
+        }
+        return false;
+    }
+
+
 
 }

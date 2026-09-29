@@ -1,13 +1,13 @@
 package edu.harvard.iq.dataverse.api.util;
 
-import edu.harvard.iq.dataverse.api.ApiBlockingFilter;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EmptySource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
-import javax.servlet.http.HttpServletRequest;
+import edu.harvard.iq.dataverse.api.filter.ApiBlockingFilter;
+import jakarta.servlet.http.HttpServletRequest;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;

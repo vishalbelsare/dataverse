@@ -1,0 +1,132 @@
+=======================
+Making Library Releases
+=======================
+
+.. contents:: |toctitle|
+	:local:
+
+Introduction
+------------
+
+Note: See :doc:`making-releases` for Dataverse itself.
+
+We release Java libraries to Maven Central that are used by Dataverse (and perhaps `other <https://github.com/gdcc/xoai/issues/141>`_ `software <https://github.com/gdcc/xoai/issues/170>`_!):
+
+- https://central.sonatype.com/namespace/org.dataverse
+- https://central.sonatype.com/namespace/org.dataverse.test
+- https://central.sonatype.com/namespace/io.gdcc
+- https://central.sonatype.com/namespace/io.gdcc.export
+
+We release JavaScript/TypeScript libraries to npm:
+
+- https://www.npmjs.com/package/@iqss/dataverse-design-system
+
+Maven Central (Java)
+--------------------
+
+From the perspective of the Maven Central, we are both `producers <https://central.sonatype.org/publish/>`_ because we publish/release libraries there and `consumers <https://central.sonatype.org/consume/>`_ because we pull down those libraries (and many others) when we build Dataverse. 
+
+Releasing Existing Libraries to Maven Central
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you need to release an existing library, all the setup should be done already. The steps below assume that GitHub Actions are in place to do the heavy lifting for you, such as signing artifacts with GPG.
+
+Releasing a Snapshot Version to Maven Central
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`Snapshot <https://maven.apache.org/guides/getting-started/index.html#what-is-a-snapshot-version>`_ releases are published automatically through GitHub Actions (e.g. through a `snapshot workflow <https://github.com/gdcc/sword2-server/blob/main/.github/workflows/maven-snapshot.yml>`_ for the SWORD library) every time a pull request is merged (or the default branch, typically ``main``, is otherwise updated).
+
+That is to say, to make a snapshot release, you only need to get one or more commits into the default branch.
+
+It's possible, of course, to make snapshot releases outside of GitHub Actions, from environments such as your laptop. Generally, you'll want to look at the GitHub Action and try to do the equivalent. You'll need a file set up locally at ``~/.m2/settings.xml`` with the following (contact a core developer for the redacted bits):
+
+.. code-block:: bash
+
+  <settings>
+    <servers>
+      <server>
+        <id>central</id>
+        <username>REDACTED</username>
+        <password>REDACTED</password>
+      </server>
+    </servers>
+  </settings>
+
+Then, study the GitHub Action and perform similar commands from your local environment. For example, as of this writing, for the dataverse-spi project, you can run the following commands, substituting the suffix you need:
+
+``mvn -f modules/dataverse-spi -Dproject.version.suffix="2.1.0-PR11767-SNAPSHOT" verify``
+
+``mvn -f modules/dataverse-spi -Dproject.version.suffix="2.1.0-PR11767-SNAPSHOT" deploy``
+
+This will upload the snapshot here, for example: https://central.sonatype.com/repository/maven-snapshots/io/gdcc/dataverse-spi/2.1.02.1.0-PR11767-SNAPSHOT/dataverse-spi-2.1.02.1.0-PR11767-20250827.182026-1.jar
+
+Before OSSRH was retired, you could browse through snapshot jars you published at https://s01.oss.sonatype.org/content/repositories/snapshots/io/gdcc/dataverse-spi/2.0.0-PR9685-SNAPSHOT/, for example. Now, even though you may see the URL of the jar as shown above during the "deploy" step, if you try to browse the various snapshot jars at https://central.sonatype.com/repository/maven-snapshots/io/gdcc/dataverse-spi/2.1.02.1.0-PR11767-SNAPSHOT/ you'll see "This maven2 hosted repository is not directly browseable at this URL. Please use the browse or HTML index views to inspect the contents of this repository." Sadly, the "browse" and "HTML index" links don't work, as noted in a `question <https://community.sonatype.com/t/this-maven2-group-repository-is-not-directly-browseable-at-this-url/8991>`_ on the Sonatype Community forum. Below is a suggestion for confirming that the jar was uploaded properly, which is to use Maven to copy the jar to your local directory. You could then compare checksums.
+
+``mvn dependency:copy -DrepoUrl=https://central.sonatype.com/repository/maven-snapshots/ -Dartifact=io.gdcc:dataverse-spi:2.1.02.1.0-PR11767-SNAPSHOT -DoutputDirectory=.``
+
+Releasing a Release (Non-Snapshot) Version to Maven Central
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+From a pom.xml it may not be apparent that snapshots like ``6.0-SNAPSHOT`` might be changing under your feet. Browsing the snapshot repository (e.g. our `UNF 6.0-SNAPSHOT <https://s01.oss.sonatype.org/content/groups/staging/org/dataverse/unf/6.0-SNAPSHOT/>`_), may reveal versions changing over time. To finalize the code and stop it from changing, we publish/release what Maven calls a "`release version <https://maven.apache.org/guides/getting-started/index.html#what-is-a-snapshot-version>`_". This will remove ``-SNAPSHOT`` from the version (through an ``mvn`` command).
+
+Non-snapshot releases (`release <https://maven.apache.org/guides/getting-started/index.html#what-is-a-snapshot-version>`_ versions) are published automatically through GitHub Actions (e.g. through a `release workflow <https://github.com/gdcc/sword2-server/blob/main/.github/workflows/maven-release.yml>`_), kicked off locally by an ``mvn`` command that invokes the `Maven Release Plugin <https://maven.apache.org/maven-release/maven-release-plugin/>`_.
+
+First, run a clean:
+
+``mvn release:clean``
+
+Then run a prepare:
+
+``mvn release:prepare``
+
+The prepare step is interactive. You will be prompted for the following information:
+
+- the release version (e.g. `2.0.0 <https://repo.maven.apache.org/maven2/io/gdcc/sword2-server/2.0.0/>`_)
+- the git tag to create and push (e.g. `sword2-server-2.0.0 <https://github.com/gdcc/sword2-server/releases/tag/sword2-server-2.0.0>`_)
+- the next development (snapshot) version (e.g. `2.0.1-SNAPSHOT <https://s01.oss.sonatype.org/#nexus-search;checksum~47575aed5471adeb0a08a02098ce3a23a5778afb>`_)
+
+These examples from the SWORD library. Below is what to expect from the interactive session. In many cases, you can just hit enter to accept the defaults.
+
+.. code-block:: bash
+
+        [INFO] 5/17 prepare:map-release-versions
+        What is the release version for "SWORD v2 Common Server Library (forked)"? (sword2-server) 2.0.0: :
+        [INFO] 6/17 prepare:input-variables
+        What is the SCM release tag or label for "SWORD v2 Common Server Library (forked)"? (sword2-server) sword2-server-2.0.0: :
+        [INFO] 7/17 prepare:map-development-versions
+        What is the new development version for "SWORD v2 Common Server Library (forked)"? (sword2-server) 2.0.1-SNAPSHOT: :
+        [INFO] 8/17 prepare:rewrite-poms-for-release
+
+Note that a commit or two will be made and pushed but if you do a ``git status`` you will see that locally you are behind by that number of commits. To fix this, you can just do a ``git pull``.
+
+It can take some time for the jar to be visible on Maven Central. You can start by looking on the repo1 server, like this: https://repo1.maven.org/maven2/io/gdcc/sword2-server/2.0.0/
+
+Don't bother putting the new version in a pom.xml until you see it on repo1.
+
+Note that the next snapshot release should be available as well, like this: https://s01.oss.sonatype.org/content/groups/staging/io/gdcc/sword2-server/2.0.1-SNAPSHOT/ 
+
+Releasing a New Library to Maven Central
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+At a high level:
+
+- Start with a snapshot release.
+- Use an existing pom.xml as a starting point, such as from `Croissant <https://github.com/gdcc/exporter-croissant>`_, that inherits from the common Maven parent (https://github.com/gdcc/maven-parent). You can also play around with the "hello" project (https://github.com/gdcc/hello) and even make releases from it since it is designed to be a sandbox for publishing to Maven Central.
+- Use existing GitHub Actions workflows as a starting point, such as from `Croissant <https://github.com/gdcc/exporter-croissant>`_. As of this writing we have separate actions for ``maven-snapshot.yml`` and ``maven-release.yml``.
+- For repos under https://github.com/IQSS, create secrets in the new library's GitHub repo used by the workflow. This is necessary for the IQSS org because "organization secrets are not available for organizations on legacy per-repository billing plans." For repos under https://github.com/gdcc you can make use of shared secrets at the org level. These are the environment variables we use:
+
+  - DATAVERSEBOT_GPG_KEY
+
+  - DATAVERSEBOT_GPG_PASSWORD
+
+  - DATAVERSEBOT_SONATYPE_TOKEN
+
+  - DATAVERSEBOT_SONATYPE_USERNAME
+- If you need an entire new namespace, look at previous issues such as https://issues.sonatype.org/browse/OSSRH-94575 and https://issues.sonatype.org/browse/OSSRH-94577
+
+npm (JavaScript/TypeScript)
+---------------------------
+
+Currently, publishing `@iqss/dataverse-design-system <https://www.npmjs.com/package/@iqss/dataverse-design-system>`_ to npm done manually. We plan to automate this as part of https://github.com/IQSS/dataverse-frontend/issues/140
+
+https://www.npmjs.com/package/js-dataverse is the previous 1.0 version of js-dataverse. No 1.x releases are planned. We plan to publish 2.0 (used by the new frontend) as discussed in https://github.com/IQSS/dataverse-frontend/issues/13

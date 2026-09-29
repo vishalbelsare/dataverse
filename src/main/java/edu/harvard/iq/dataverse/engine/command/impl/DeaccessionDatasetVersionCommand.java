@@ -16,8 +16,8 @@ import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.RequiredPermissions;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.IllegalCommandException;
-import edu.harvard.iq.dataverse.export.ExportException;
 import edu.harvard.iq.dataverse.export.ExportService;
+import io.gdcc.spi.export.ExportException;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import java.io.IOException;
@@ -97,6 +97,9 @@ public class DeaccessionDatasetVersionCommand extends AbstractCommand<DatasetVer
 
         Dataset managedDs = ctxt.em().merge(managed.getDataset());
 
+        // delete all FeaturedItems with links to this deaccessioned dataset
+        ctxt.dataverseFeaturedItems().deleteAllByDvObjectId(ds.getId());
+
         return managed;
     }
 
@@ -106,15 +109,7 @@ public class DeaccessionDatasetVersionCommand extends AbstractCommand<DatasetVer
         DatasetVersion version = (DatasetVersion) r;
         Dataset dataset = version.getDataset();
 
-        try {
-            ctxt.index().indexDataset(dataset, true);
-            Future<String> indexString = ctxt.index().indexDataset(dataset, true);
-        } catch (IOException | SolrServerException e) {
-            String failureLogText = "Post-publication indexing failed. You can kickoff a re-index of this dataset with: \r\n curl http://localhost:8080/api/admin/index/datasets/" + dataset.getId().toString();
-            failureLogText += "\r\n" + e.getLocalizedMessage();
-            LoggingUtil.writeOnSuccessFailureLog(this, failureLogText, dataset);
-            retVal = false;
-        }
+        ctxt.index().asyncIndexDataset(dataset, true);
         return retVal;
     }
 

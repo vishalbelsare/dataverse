@@ -7,6 +7,9 @@ html {
 body {
   /* Sticky footer Margin bottom by footer height */
   margin-bottom:160px;
+  /* #11824 */
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 body.widget-view {margin-bottom:44px;}
 body .ui-widget {font-size: inherit;}
@@ -49,8 +52,9 @@ body .ui-widget {font-size: inherit;}
 #status-alert {margin-top:0; margin-bottom:0;}
 #status-alert div.alert {border:0; box-shadow:none;}
 
-#dvfooter {position:absolute; bottom:0; width:100%; height:60px; padding-bottom:100px; color:#767676;}
-#dvfooter.widget-view {position:fixed; left:0; bottom:0; margin:0; padding:4px 0 0 0; min-height:44p; height:auto; background:#fff;}
+footer {height:0px; color:#767676;}
+#dvfooter {padding-top:60px;}
+#dvfooter.widget-view {position:fixed; left:0; bottom:0; margin:0; padding:4px 0 0 0; min-height:44px; height:auto; background:#fff;}
 #dvfooter .poweredbylogo {text-align:right;}
 #dvfooter .poweredbylogo span {font-size:.85em;margin-right:.3em;}
 #dvfooter .version {vertical-align:bottom;white-space:nowrap;}
@@ -66,7 +70,7 @@ tr.ui-state-highlight, .ui-widget-content tr.ui-state-highlight, .ui-widget-head
 tr.ui-state-highlight label, .ui-widget-content tr.ui-state-highlight label, .ui-widget-header tr.ui-state-highlight label {color: #333333;}
 tr.ui-state-highlight a:not(.btn), .ui-widget-content tr.ui-state-highlight a:not(.btn), .ui-widget-header tr.ui-state-highlight a:not(.btn) {color: #428bca;}
 tr.ui-state-highlight .ui-icon {
-    background-image: url("/javax.faces.resource/images/ui-icons_333333_256x240.png.xhtml?ln=primefaces-bootstrap");
+    background-image: url("/jakarta.faces.resource/images/ui-icons_333333_256x240.png.xhtml?ln=primefaces-bootstrap");
 }
 td.col-select-width, th.col-select-width {width:36px;}
 
@@ -98,6 +102,7 @@ td.col-select-width, th.col-select-width {width:36px;}
 .no-margin-top {margin-top:0 !important;}
 .no-margin-bottom {margin-bottom:0 !important;}
 .margin-sides {margin-left:1em; margin-right:1em;}
+.margin-right {margin-right:.5em;}
 .padding-12 {padding: 12px;}
 .padding-6 {padding: 6px;}
 .padding-none {padding: 0 !important;}
@@ -223,7 +228,7 @@ body.widget-view #dataverse-header-block {padding-top:0px;}
 #dataverseHeader .dataverseHeaderCell.dataverseHeaderLogo img {max-width:100px; max-height:100px;}
 #dataverseHeader .dataverseHeaderName {padding:2em 1em 2em 0em;}
 #dataverseHeader .dataverseHeaderName .dataverseHeaderDataverseName {font-size: 1.3em;}
-#dataverseHeader .dataverseHeaderName span.label.label-unpublished {vertical-align:text-top; line-height: normal; margin-left:1em;}
+#dataverseHeader .dataverseHeaderName span.label {line-height: normal; margin-left:.5em;}
 #dataverseHeader .dataverseHeaderTagline {padding-left:2em; font-size:1.3em;}
 #dataverseHeader .dataverseHeaderLink {padding-left:2em;}
 #dataverseHeader .dataverseHeaderName .dataverseHeaderDataverseName h1 {
@@ -244,7 +249,7 @@ body.widget-view #dataverse-header-block {padding-top:0px;}
 #breadcrumbNavBlock a[id^='breadcrumbLnkTree'] span.glyphicon-chevron-down {vertical-align:middle;padding-bottom:2px;}
 #breadcrumbNavBlock > .ui-panel-content {overflow:hidden;}
 #breadcrumbNavBlock.panelLayoutBlock > .ui-widget-content {border-bottom: 0;}
-#breadcrumbNavBlock .breadcrumbCarrot {float:left; margin:0 .4em; color:#B3B3B3;}
+#breadcrumbNavBlock .breadcrumbCarrot {float:left; margin:0 .4em; color:#757575;}
 #breadcrumbNavBlock div.dropdown-menu {padding-right:.5em; min-width:280px;}
 #breadcrumbNavBlock .ui-tree {width: auto;}
 #breadcrumbNavBlock div.ui-tree.ui-widget-content {border:0;}
@@ -481,7 +486,7 @@ span.search-term-match {font-weight: bold;}
 [id$='resultsTable'] div.card-title-icon-block span.label {vertical-align:15%}
 [id$='resultsTable'] div.card-preview-icon-block {width:48px; float:left; margin:4px 12px 6px 0;}
 [id$='resultsTable'] div.card-preview-icon-block a {display:block; height:48px; line-height:48px;}
-[id$='resultsTable'] div.card-preview-icon-block img {vertical-align:middle;}
+[id$='resultsTable'] div.card-preview-icon-block img {vertical-align:middle; max-width: 64px; max-height: 48px; padding-right: 10px;}
 [id$='resultsTable'] div.card-preview-icon-block span[class^='icon'],
 [id$='resultsTable'] div.card-preview-icon-block span[class^='glyphicon'] {font-size:2.8em;}
 
@@ -566,6 +571,7 @@ div.ui-tabs-panels .ui-tabs.ui-tabs-top .ui-tabs-nav.ui-widget-header {border-bo
 
 /* -------- PERMISSIONS -------- */
 div[id$='roleDisplay'] span.label, div[id$='roleDetails'] span.label {display:inline-block; margin-bottom:4px;}
+#rolesPermissionsForm {word-break:break-word;}
 
 /* -------- METRICS -------- */
 /* -- OLD LAYOUT, DATAVERSE -- */
@@ -576,7 +582,8 @@ div[id$='roleDisplay'] span.label, div[id$='roleDetails'] span.label {display:in
 #metrics-content {color:#333;background:#fff;padding:8px 10px;}
 /* -- NEW LAYOUT, DATASET + FILE -- */
 #metrics-block {border:0; margin-top:6px;}
-#metrics-body {border:1px solid #EEE;border-width:1px 0 0 0;padding:8px 0;}
+#metrics-heading-subtitle {font-weight:normal;font-size:smaller;}
+#metrics-body {border:1px solid #EEE;border-top-width:0;padding:8px 10px;}
 #metrics-block .metrics-count-block:not(:last-child) {margin-bottom:.5em;padding-bottom:.5em;border-bottom:1px solid #EEE}
 
 /* -------- SHARRRE -------- */
@@ -597,10 +604,15 @@ div[id$='roleDisplay'] span.label, div[id$='roleDetails'] span.label {display:in
 #title {font-size:36px !important;line-height:1.1;font-weight:bold;margin-top:0px;margin-bottom:0px;}
 #author, #contact {display:block; margin-bottom:.5em;}
 
+/* #11053 */
+#publication span {
+    margin: 0px 5px 0px 5px;
+}
+
 /* RESPONSIVE ORDER HACK BOOTSTRAP 3 https://stackoverflow.com/a/24834574 */
 #dataset-colorder-block {height: 50px;}
 @media(min-width:992px){
-    #dataset-summary-metadata, #deaccession-reason-block {margin-top: -50px;}
+    #dataset-colorder-block + div {margin-top: -50px;}
 }
 
 .bg-citation {background:#ECF6FB; border: 0;}
@@ -667,6 +679,21 @@ div.edit-field div.ui-message {margin:6px 0;}
 .metadata-container pre {
     white-space: pre-wrap !important;
 }
+
+
+img[alt='ORCID logo'], img[alt='ROR logo'] {
+        vertical-align: text-top;
+        margin-right:1px;
+        margin-left: 3px;
+}
+
+img.ror {
+  vertical-align: middle;
+}
+.expanded.parenthetical[data-cvoc-protocol='ror'] span {
+  margin: 0px 5px 0px 5px;
+}
+
 /* TRUNCATION */
 div.more-block {text-align:center; padding-top:250px; width:100%; position:absolute; bottom:0; background:linear-gradient(180deg,hsla(0,0%,100%,0),#fff 80%);}
 button.desc-more-link {margin:0; padding:0;}
@@ -729,6 +756,10 @@ a.popoverHTML {display:inline-block;}
 /* TERMS */
 .waiver-CC0-inline {display:inline-block; margin-left:1em;}
 
+/* CURATION STATUS HISTORY */
+div[id$="curationStatusHistoryDialog"] {max-width:800px;}
+div[id$="curationStatusHistoryDialog"] th span {color:white;text-shadow:none;}
+
 /* FILES */
 div[id$="filesTable"].ui-datatable.ui-widget div.ui-datatable-tablewrapper {overflow:visible;}
 div[id$="filesTable"].ui-datatable.ui-widget {margin-bottom:20px;}
@@ -770,6 +801,17 @@ div[id$="filesTable"] thead[id$="filesTable_head"] th.ui-selection-column .ui-ch
     word-break: break-all;
     /* Non standard for webkit */
     word-break: break-word;
+}
+/*Remote Store Branding*/
+.remote-info {
+    width: fit-content;
+    margin-left: auto;
+    margin-right: 10px;
+    display: block;
+    padding:5px;
+}
+.remote-info > a {
+    color:white;
 }
 
 /* REQUEST ACCESS DOWNLOAD OPTION LINK */
@@ -869,6 +911,7 @@ div.panel-body.read-terms{max-height:220px; overflow-y:scroll; width:100%; backg
 /* UPLOAD FILES */
 #dragdropMsg {padding:20px;font-size:1.3em;color:#808080;text-align:center;}
 .dropin-btn-status.ui-icon {background: url("https://www.dropbox.com/static/images/widgets/dbx-saver-status.png") no-repeat;}
+.globus-btn.ui-icon {background: url("https://docs.globus.org/images/home/transfer.png") no-repeat;background-size:contain;display:inline-block;}
 
 /* VERSIONS */
 div[id$="versionsTable"] th.col-select-width * {display:none;}
@@ -883,7 +926,19 @@ div.dvnDifferanceTable > div.ui-datatable-tablewrapper > table > tbody > tr, div
 div.dvnDifferanceTable > div.ui-datatable-tablewrapper > table > tbody > tr, div.dvnDifferanceTable > div.ui-datatable-tablewrapper > table > tbody > tr > td:last-child {border-right-width:0;}
 div.dvnDifferanceTable div.ui-datatable-tablewrapper table td.versionValue {width:30%;}
 div.dvnDifferanceTable div.ui-datatable-tablewrapper table td.versionDetails {width:35%;}
-div.dvnDifferanceTable .diffDetailBlock {display:block;}
+div.dvnDifferanceTable .diffDetailBlock {
+    display:block;
+    word-break:break-all;
+}
+
+div.dvnDifferanceTable .versionValue {
+    word-break:break-all;
+}
+div[id$="versionsTable"] tbody {word-break:break-word;}
+
+.archive-submit-link {
+    display: block;
+}
 
 /* DATATABLE + DROPDOWN BUTTON + OVERFLOW VISIBLE */
 thead.ui-datatable-scrollable-theadclone {display:none}
@@ -913,6 +968,9 @@ thead.ui-datatable-scrollable-theadclone {display:none}
 #file-title-block span.glyphicon-lock, #file-title-block span.icon-unlock {top:1px;}
 #file-title-block span.ingest-warning {vertical-align:text-bottom;font-size:30px;}
 #fileCategoriesBlock span.label {margin-right: 0.5em;}
+#file-tags .label {
+    display:inline-block;
+}
 
 /* BLOCK UI */
 .ui-blockui.ui-widget-overlay {background:#fff; opacity:.6;}
@@ -1029,7 +1087,15 @@ progress::-webkit-progress-value {
   background-color:green;
 }
 
+.curation-status {
+  background-color: #CE15D1
+}
+
 /*External vocabulary support*/
+
+.select2-container {
+    display:block!important;
+}
 
 .select2-container .select2-selection--single {
         border:1px solid #cccccc;
@@ -1041,12 +1107,13 @@ progress::-webkit-progress-value {
 
 .select2-container .select2-selection--single .select2-selection__rendered {
         display:inline-block!important;
-        max-width:90%
+        max-width:80%;
+        padding-right:5px!important;
 }
 .select2-selection__clear, .select2-selection__rendered {
         vertical-align: -webkit-baseline-middle;
 }
-.select2-results li {
+.select2-results ul > li {
         font-weight:400;
         font-size:14px;
 }
@@ -1098,12 +1165,50 @@ padding-right:0px;
     font-weight: 700;
 }
 
+/*RETENTION*/
+.retentionright {
+  margin-left:10px;
+}
+.retentioncheckbox {
+  margin-top: 20px;
+  padding-bottom: 30px;
+}
+.retentionmsg {
+  display:block;
+}
+.retention {
+        display:flex;
+        flex-direction:column;
+}
+.retention.text-warning, .retention.text-danger {
+        flex-direction:row;
+}
+.retention span {
+        margin-right: 10px;
+}
+.retention span.glyphicon-asterisk {
+            font-size: .5em;
+                vertical-align: top;
+}
+
+.retention .col-lg-3 {
+    padding-left:0px;
+}
+
+.retentionlabel {
+    font-weight: 700;
+}
+
 /*Accessibility*/
 .text-muted {
     color: #707070;
 }
 a {
     color:#3174AF;
+}
+
+.label-warning a, .bg-citation a, .terms .help-block a, #panelCollapseTOU .help-block a,  #dataset-summary-metadata a {
+  text-decoration: underline;
 }
 .pagination>.disabled>a {
     color:#767676;
@@ -1115,3 +1220,60 @@ span.label-default { background-color: #757575 }
 
 .login-container h1 { font-size:30px; }
 #embargoInputs label { font-weight: normal; }
+
+/*Template Instructions Editing*/
+.ui-inplace .ui-inputfield {
+    width:60%
+}
+/*File sorting*/
+#datasetForm .file-sort {
+	max-width: 255px;
+	float: right;
+	padding-right:21px;
+}
+
+#datasetForm .file-sort .btn-group {
+	padding-top: 4px;
+}
+
+#datasetForm .file-group-by {
+	min-width: 130px;
+	padding: 0px;
+}
+
+
+/*CSL Citations*/
+#datasetForm .csl-entry {
+    border-style: outset;
+    border-radius: 5px;
+    border-color: #757575;
+    margin: 10px 0px 10px 0px;
+    padding: 10px;
+    display: inline;
+    }
+
+#datasetForm\:cslLabel {
+    margin-top:30px;
+    display:block;
+}
+
+#datasetForm\:cslOutput, .csl-bib-body, .csl-right-inline {
+    display:inline;
+}
+
+#datasetForm\:cslCitation .glyphicon-copy{
+    font-size: x-large;
+    display: inline;
+    vertical-align: bottom;
+    margin-left: 5px;
+}
+    
+/* Suppress the number in some styles indication this references ordinal position in a larger bibliography (which is always 1 in our dialog)*/ 
+.csl-left-margin {
+    display:none;
+}
+
+/*Align menu items*/
+.citation-download .btn {
+    margin-left: 8px;
+}

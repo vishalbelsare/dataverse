@@ -1,0 +1,111 @@
+---
+name: Base Container Image
+
+on:
+    push:
+        branches:
+            - 'develop'
+        # "Path filters are not evaluated for pushes of tags" https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore
+        paths:
+            - 'modules/container-base/**'
+            - '!modules/container-base/src/backports/**'
+            - '!modules/container-base/README.md'
+            - 'modules/dataverse-parent/pom.xml'
+            - '.github/workflows/container_base_push.yml'
+
+    # These TODOs are left for #10618
+    # TODO: we are missing a workflow_call option here, so we can trigger this flow from pr comments and maven tests (keep the secrets availability in mind!)
+    # TODO: we are missing a pull_request option here (filter for stuff that would trigger the maven runs!) so we can trigger preview builds for them when coming from the main repo (keep the secrets availability in mind!)
+
+env:
+    PLATFORMS: linux/amd64,linux/arm64
+    DEVELOPMENT_BRANCH: develop
+
+jobs:
+    build:
+        name: Base Image
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: read
+        # Only run in upstream repo - avoid unnecessary runs in forks
+        if: ${{ github.repository_owner == 'IQSS' }}
+        outputs:
+          base-image-ref: ${{ steps.determine-name.outputs.full-ref }}
+
+        steps:
+            - name: Checkout and Setup Maven
+              uses: IQSS/dataverse/.github/actions/setup-maven@develop
+              with:
+                pom-paths: modules/container-base/pom.xml
+
+            # Note: Accessing, pushing tags etc. to DockerHub will only succeed in upstream and
+            #       on events in context of upstream because secrets. PRs run in context of forks by default!
+            - name: Log in to the Container registry
+              uses: docker/login-action@v4.6.0
+              with:
+                  username: ${{ secrets.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            # In case this is a push to develop, we care about buildtime.
+            # Configure a remote ARM64 build host in addition to the local AMD64 in two steps.
+            - name: Setup SSH agent
+              uses: webfactory/ssh-agent@v0.10.0
+              with:
+                  ssh-private-key: ${{ secrets.BUILDER_ARM64_SSH_PRIVATE_KEY }}
+            - name: Provide the known hosts key and the builder config
+              run: |
+                  echo "${{ secrets.BUILDER_ARM64_SSH_HOST_KEY }}" > ~/.ssh/known_hosts
+                  mkdir -p modules/container-base/target/buildx-state/buildx/instances
+                  cat > modules/container-base/target/buildx-state/buildx/instances/maven << EOF
+                  { "Name": "maven",
+                    "Driver": "docker-container",
+                    "Dynamic": false,
+                    "Nodes": [{"Name": "maven0",
+                               "Endpoint": "unix:///var/run/docker.sock",
+                               "Platforms": [{"os": "linux", "architecture": "amd64"}],
+                               "DriverOpts": null,
+                               "Flags": ["--allow-insecure-entitlement=network.host"],
+                               "Files": null},
+                              {"Name": "maven1",
+                               "Endpoint": "ssh://${{ secrets.BUILDER_ARM64_SSH_CONNECTION }}",
+                               "Platforms": [{"os": "linux", "architecture": "arm64"}],
+                               "DriverOpts": null,
+                               "Flags": ["--allow-insecure-entitlement=network.host"],
+                               "Files": null}]}
+                  EOF
+
+            # Determine the base image name we are going to use from here on
+            - name: Determine base image name
+              id: determine-name
+              run: |
+                BASE_IMAGE=$( mvn initialize help:evaluate -Pct -f modules/container-base -Dexpression=base.image -q -DforceStdout )
+                BASE_IMAGE_UPCOMING=$( mvn initialize help:evaluate -Pct -f modules/container-base -Dexpression=base.image -Dbase.image.tag.suffix="" -q -DforceStdout )
+                
+                echo "BASE_IMAGE=${BASE_IMAGE}" | tee -a "${GITHUB_ENV}"
+                echo "BASE_IMAGE_UPCOMING=${BASE_IMAGE_UPCOMING}" | tee -a "${GITHUB_ENV}"
+                echo "full-ref=${BASE_IMAGE_UPCOMING}" | tee -a "$GITHUB_OUTPUT"
+
+            - name: Configure update of "latest" tag for development branch
+              id: develop-tag
+              run: |
+                echo "tag-options=-Ddocker.tags.develop=unstable -Ddocker.tags.upcoming=${BASE_IMAGE_UPCOMING#*:}" | tee -a "${GITHUB_OUTPUT}"
+
+            - name: Deploy multi-arch base container image to Docker Hub
+              id: build
+              run: |
+                mvn -f modules/container-base -Pct deploy -Ddocker.noCache -Ddocker.platforms=${{ env.PLATFORMS }} \
+                  -Ddocker.imagePropertyConfiguration=override ${{ steps.develop-tag.outputs.tag-options }}
+
+    push-app-img:
+        name: "Rebase & Publish App Image"
+        permissions:
+            contents: read
+            packages: write
+            pull-requests: write
+        secrets: inherit
+        needs:
+            - build
+        uses: ./.github/workflows/container_app_push.yml
+        with:
+          base-image-ref: ${{ needs.build.outputs.base-image-ref }}

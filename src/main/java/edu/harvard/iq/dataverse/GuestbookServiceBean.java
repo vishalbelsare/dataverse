@@ -5,12 +5,13 @@
  */
 package edu.harvard.iq.dataverse;
 
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+
 import java.util.List;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
 
 /**
  *
@@ -22,8 +23,28 @@ public class GuestbookServiceBean implements java.io.Serializable {
     
     @PersistenceContext(unitName = "VDCNet-ejbPU")
     private EntityManager em;
-    
-    
+
+    public List<Guestbook> findGuestbooksForGivenDataverse(Dataverse dataverse) {
+        if (dataverse != null) {
+            Query query = em.createNamedQuery("Guestbook.findByDataverse");
+            query.setParameter("dataverse", dataverse);
+            return query.getResultList();
+        } else {
+            return List.of();
+        }
+    }
+    // Get all guestbooks for this collection and it's parent collections
+    public List<Guestbook> findEffectiveGuestbooksForGivenDataverse(Dataverse dataverse) {
+        List<Guestbook> guestbooks = findGuestbooksForGivenDataverse(dataverse);
+        if (dataverse != null) {
+            List<Dataverse> parentDataverses = dataverse.getOwners();
+            for (Dataverse dv : parentDataverses) {
+                guestbooks.addAll(findGuestbooksForGivenDataverse(dv));
+            }
+        }
+        return guestbooks;
+    }
+
     public Long findCountUsages(Long guestbookId, Long dataverseId) {
         String queryString = "";
         if (guestbookId != null && dataverseId != null) {

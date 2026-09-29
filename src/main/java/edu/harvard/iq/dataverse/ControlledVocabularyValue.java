@@ -8,6 +8,7 @@ package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.persistence.logging.LogLevel;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -15,18 +16,19 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.MissingResourceException;
-import javax.persistence.CascadeType;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Index;
-import javax.persistence.ManyToOne;
-import javax.persistence.OneToMany;
-import javax.persistence.Table;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
 
 /**
  *
@@ -148,7 +150,11 @@ public class ControlledVocabularyValue implements Serializable  {
                 return sendDefault ? strValue : null;
             }
         } catch (MissingResourceException | NullPointerException e) {
-            logger.warning("Error finding" + "controlledvocabulary." + fieldTypeName + "." + key + " in " + ((locale==null)? "defaultLang" : locale.getLanguage()) + " : " + e.getLocalizedMessage());
+            //If we're using the default local and can return the default value, this shouldn't be a warning
+            if (locale != null && !locale.equals(Locale.getDefault()) && sendDefault) {
+                logger.log(((locale != null && !locale.equals(Locale.getDefault()) && ! sendDefault) ? Level.WARNING:Level.FINE),"Error finding " + "controlledvocabulary." + fieldTypeName + "." + key + " in "
+                        + ((locale == null) ? "defaultLang" : locale.getLanguage()) + " : " + e.getLocalizedMessage());
+            }
             return sendDefault ? strValue : null;
         }
     }

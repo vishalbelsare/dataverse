@@ -5,10 +5,11 @@
  */
 package edu.harvard.iq.dataverse;
 
+import jakarta.faces.model.SelectItem;
+import jakarta.persistence.*;
+
 import java.io.Serializable;
 import java.util.List;
-import javax.faces.model.SelectItem;
-import javax.persistence.*;
 
 /**
  *

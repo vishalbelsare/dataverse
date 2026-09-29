@@ -4,7 +4,6 @@ import edu.harvard.iq.dataverse.branding.BrandingUtilTest;
 import edu.harvard.iq.dataverse.license.License;
 import edu.harvard.iq.dataverse.mocks.MocksFactory;
 import edu.harvard.iq.dataverse.util.json.JsonUtil;
-import java.io.StringReader;
 import java.net.URI;
 import java.sql.Timestamp;
 import java.text.ParseException;
@@ -14,10 +13,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -80,7 +77,7 @@ public class DatasetVersionTest {
 
         DatasetVersion nonDraft = new DatasetVersion();
         nonDraft.setVersionState(DatasetVersion.VersionState.RELEASED);
-        assertEquals(false, nonDraft.isInReview());
+        assertFalse(nonDraft.isInReview());
         
         ds.addLock(null);
         assertFalse(nonDraft.isInReview());
@@ -92,17 +89,13 @@ public class DatasetVersionTest {
     @Test
     public void testGetJsonLd() throws ParseException {
         Dataset dataset = new Dataset();
-        License license = new License("CC0 1.0", "You can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission.", URI.create("https://creativecommons.org/publicdomain/zero/1.0/"), URI.create("/resources/images/cc0.png"), true);
+        License license = new License("CC0 1.0", "You can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission.", URI.create("http://creativecommons.org/publicdomain/zero/1.0"), URI.create("/resources/images/cc0.png"), true, 1l);
         license.setDefault(true);
         dataset.setProtocol("doi");
         dataset.setAuthority("10.5072/FK2");
         dataset.setIdentifier("LK0D1H");
         DatasetVersion datasetVersion = new DatasetVersion();
         datasetVersion.setDataset(dataset);
-        datasetVersion.setVersionState(DatasetVersion.VersionState.DRAFT);
-        assertEquals("", datasetVersion.getPublicationDateAsString());
-        // Only published datasets return any JSON.
-        assertEquals("", datasetVersion.getJsonLd());
         datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
         datasetVersion.setVersionNumber(1L);
         SimpleDateFormat dateFmt = new SimpleDateFormat("yyyyMMdd");
@@ -117,21 +110,20 @@ public class DatasetVersionTest {
         datasetVersion.setTermsOfUseAndAccess(terms);
         String jsonLd = datasetVersion.getJsonLd();
         logger.fine("jsonLd: " + JsonUtil.prettyPrint(jsonLd));
-        JsonReader jsonReader = Json.createReader(new StringReader(jsonLd));
-        JsonObject obj = jsonReader.readObject();
+        JsonObject obj = JsonUtil.getJsonObject(jsonLd);
         assertEquals("http://schema.org", obj.getString("@context"));
         assertEquals("Dataset", obj.getString("@type"));
         assertEquals("https://doi.org/10.5072/FK2/LK0D1H", obj.getString("@id"));
         assertEquals("https://doi.org/10.5072/FK2/LK0D1H", obj.getString("identifier"));
         assertEquals(null, obj.getString("schemaVersion", null));
-        assertEquals("https://creativecommons.org/publicdomain/zero/1.0/", obj.getString("license"));
+        assertEquals("http://creativecommons.org/publicdomain/zero/1.0", obj.getString("license"));
         assertEquals("1955-11-05", obj.getString("dateModified"));
         assertEquals("1955-11-05", obj.getString("datePublished"));
         assertEquals("1", obj.getString("version"));
         // TODO: if it ever becomes easier to mock a dataset title, test it.
         assertEquals("", obj.getString("name"));
         // TODO: If it ever becomes easier to mock authors, test them.
-        JsonArray emptyArray = Json.createArrayBuilder().build();
+        JsonArray emptyArray = JsonUtil.createArrayBuilder().build();
         assertEquals(emptyArray, obj.getJsonArray("creator"));
         assertEquals(emptyArray, obj.getJsonArray("author"));
         // TODO: If it ever becomes easier to mock subjects, test them.
@@ -153,8 +145,6 @@ public class DatasetVersionTest {
         datasetVersion.setDataset(dataset);
         datasetVersion.setVersionState(DatasetVersion.VersionState.DRAFT);
         assertEquals("", datasetVersion.getPublicationDateAsString());
-        // Only published datasets return any JSON.
-        assertEquals("", datasetVersion.getJsonLd());
         datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
         datasetVersion.setVersionNumber(1L);
         datasetVersion.setMinorVersionNumber(0L);
@@ -173,8 +163,7 @@ public class DatasetVersionTest {
 
         String jsonLd = datasetVersion.getJsonLd();
         logger.fine("jsonLd: " + JsonUtil.prettyPrint(jsonLd));
-        JsonReader jsonReader = Json.createReader(new StringReader(jsonLd));
-        JsonObject obj = jsonReader.readObject();
+        JsonObject obj = JsonUtil.getJsonObject(jsonLd);
         assertEquals("http://schema.org", obj.getString("@context"));
         assertEquals("Dataset", obj.getString("@type"));
         assertEquals("https://doi.org/10.5072/FK2/LK0D1H", obj.getString("@id"));
@@ -187,7 +176,7 @@ public class DatasetVersionTest {
         // TODO: if it ever becomes easier to mock a dataset title, test it.
         assertEquals("", obj.getString("name"));
         // TODO: If it ever becomes easier to mock authors, test them.
-        JsonArray emptyArray = Json.createArrayBuilder().build();
+        JsonArray emptyArray = JsonUtil.createArrayBuilder().build();
         assertEquals(emptyArray, obj.getJsonArray("creator"));
         assertEquals(emptyArray, obj.getJsonArray("author"));
         // TODO: If it ever becomes easier to mock subjects, test them.
@@ -197,6 +186,25 @@ public class DatasetVersionTest {
         assertEquals("Organization", obj.getJsonObject("provider").getString("@type"));
         assertEquals("LibraScholar", obj.getJsonObject("provider").getString("name"));
         assertEquals("LibraScholar", obj.getJsonObject("includedInDataCatalog").getString("name"));
+    }
+
+    @Test
+    public void testGetJsonLdDraft() throws ParseException {
+        Dataset dataset = new Dataset();
+        License license = new License("CC0 1.0", "You can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission.", URI.create("http://creativecommons.org/publicdomain/zero/1.0"), URI.create("/resources/images/cc0.png"), true, 1l);
+        license.setDefault(true);
+        dataset.setProtocol("doi");
+        dataset.setAuthority("10.5072/FK2");
+        dataset.setIdentifier("LK0D1H");
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setDataset(dataset);
+        datasetVersion.setVersionState(DatasetVersion.VersionState.DRAFT);
+        assertEquals("", datasetVersion.getPublicationDateAsString());
+        String jsonLd = datasetVersion.getJsonLd();
+        logger.fine("jsonLd: " + JsonUtil.prettyPrint(jsonLd));
+        JsonObject obj = JsonUtil.getJsonObject(jsonLd);
+        assertEquals("http://schema.org", obj.getString("@context"));
+        assertEquals("DRAFT", obj.getString("version"));
     }
 
 }

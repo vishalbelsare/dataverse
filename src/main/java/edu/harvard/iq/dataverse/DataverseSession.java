@@ -18,13 +18,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.enterprise.context.SessionScoped;
-import javax.faces.context.FacesContext;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
+import jakarta.ejb.EJB;
+import jakarta.enterprise.context.SessionScoped;
+import jakarta.faces.context.FacesContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 
 /**
  *
@@ -209,19 +209,17 @@ public class DataverseSession implements Serializable{
     
     public void initLocale() {
         
-        if(FacesContext.getCurrentInstance() == null) {
-            localeCode = "en";
+
+        localeCode = "en";
+        if (FacesContext.getCurrentInstance() != null) {
+            if (FacesContext.getCurrentInstance().getViewRoot() == null) {
+                localeCode = FacesContext.getCurrentInstance().getExternalContext().getRequestLocale().getLanguage();
+            } else if (FacesContext.getCurrentInstance().getViewRoot().getLocale().getLanguage().equals("en_US")) {
+                localeCode = "en";
+            } else {
+                localeCode = FacesContext.getCurrentInstance().getViewRoot().getLocale().getLanguage();
+            }
         }
-        else if (FacesContext.getCurrentInstance().getViewRoot() == null ) {
-            localeCode = FacesContext.getCurrentInstance().getExternalContext().getRequestLocale().getLanguage();
-        }
-        else if (FacesContext.getCurrentInstance().getViewRoot().getLocale().getLanguage().equals("en_US")) {
-            localeCode = "en";
-        }
-        else {
-            localeCode = FacesContext.getCurrentInstance().getViewRoot().getLocale().getLanguage();
-        }
-        
         logger.fine("init: locale set to "+localeCode);
     }
 

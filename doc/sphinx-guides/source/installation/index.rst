@@ -9,16 +9,19 @@ Installation Guide
 **Contents:**
 
 .. toctree::
+   :maxdepth: 2
 
    intro
    prep
    prerequisites
    installation-main
    config
+   big-data-support
    upgrading
-   r-rapache-tworavens
    shibboleth
    oauth2
    oidc
+   orcid
    external-tools
+   localcontexts
    advanced

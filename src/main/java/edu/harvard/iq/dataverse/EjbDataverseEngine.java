@@ -2,8 +2,12 @@ package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.actionlogging.ActionLogRecord;
 import edu.harvard.iq.dataverse.actionlogging.ActionLogServiceBean;
+import edu.harvard.iq.dataverse.dataset.DatasetFieldsValidator;
 import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUserServiceBean;
+import edu.harvard.iq.dataverse.dataverse.featured.DataverseFeaturedItemServiceBean;
+import edu.harvard.iq.dataverse.license.LicenseServiceBean;
+import edu.harvard.iq.dataverse.util.cache.CacheFactoryBean;
 import edu.harvard.iq.dataverse.engine.DataverseEngine;
 import edu.harvard.iq.dataverse.authorization.Permission;
 import edu.harvard.iq.dataverse.authorization.groups.GroupServiceBean;
@@ -11,26 +15,32 @@ import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroup
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.confirmemail.ConfirmEmailServiceBean;
 import edu.harvard.iq.dataverse.datacapturemodule.DataCaptureModuleServiceBean;
+import edu.harvard.iq.dataverse.dataset.DatasetTypeServiceBean;
 import edu.harvard.iq.dataverse.engine.command.Command;
 import edu.harvard.iq.dataverse.engine.command.CommandContext;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.PermissionException;
+import edu.harvard.iq.dataverse.engine.command.exception.RateLimitCommandException;
 import edu.harvard.iq.dataverse.ingest.IngestServiceBean;
-import edu.harvard.iq.dataverse.pidproviders.FakePidProviderServiceBean;
+import edu.harvard.iq.dataverse.pidproviders.PidProviderFactoryBean;
 import edu.harvard.iq.dataverse.privateurl.PrivateUrlServiceBean;
 import edu.harvard.iq.dataverse.search.IndexBatchServiceBean;
 import edu.harvard.iq.dataverse.search.IndexServiceBean;
-import edu.harvard.iq.dataverse.search.SearchServiceBean;
+import edu.harvard.iq.dataverse.search.SearchServiceFactory;
+
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.inject.Named;
+
+import jakarta.ejb.AsyncResult;
+import jakarta.ejb.Asynchronous;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
 import edu.harvard.iq.dataverse.search.SolrIndexServiceBean;
 import edu.harvard.iq.dataverse.search.savedsearch.SavedSearchServiceBean;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
+import edu.harvard.iq.dataverse.storageuse.StorageUseServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.ConstraintViolationUtil;
 import edu.harvard.iq.dataverse.util.SystemConfig;
@@ -38,18 +48,18 @@ import edu.harvard.iq.dataverse.workflow.WorkflowServiceBean;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Stack;
+import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.Resource;
-import javax.ejb.EJBContext;
-import javax.ejb.EJBException;
-import javax.ejb.TransactionAttribute;
-import static javax.ejb.TransactionAttributeType.REQUIRES_NEW;
-import static javax.ejb.TransactionAttributeType.SUPPORTS;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
+import jakarta.annotation.Resource;
+import jakarta.ejb.EJBContext;
+import jakarta.ejb.EJBException;
+import jakarta.ejb.TransactionAttribute;
+import static jakarta.ejb.TransactionAttributeType.REQUIRES_NEW;
+import static jakarta.ejb.TransactionAttributeType.SUPPORTS;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.validation.ConstraintViolationException;
 
 /**
  * An EJB capable of executing {@link Command}s in a JEE environment.
@@ -83,7 +93,7 @@ public class EjbDataverseEngine {
     SolrIndexServiceBean solrIndexService;
 
     @EJB
-    SearchServiceBean searchService;
+    SearchServiceFactory searchServiceFactory;
     
     @EJB
     IngestServiceBean ingestService;
@@ -113,17 +123,8 @@ public class EjbDataverseEngine {
     DataverseFieldTypeInputLevelServiceBean fieldTypeInputLevels;
 
     @EJB
-    DOIEZIdServiceBean doiEZId;
-    
-    @EJB
-    DOIDataCiteServiceBean doiDataCite;
+    PidProviderFactoryBean pidProviderFactory;
 
-    @EJB
-    FakePidProviderServiceBean fakePidProvider;
-
-    @EJB
-    HandlenetServiceBean handleNet;
-    
     @EJB
     SettingsServiceBean settings;
     
@@ -132,12 +133,21 @@ public class EjbDataverseEngine {
     
     @EJB
     GuestbookResponseServiceBean responses;
-    
+
+    @EJB
+    MetadataBlockServiceBean metadataBlockService;
+
+    @EJB
+    DatasetTypeServiceBean datasetTypeService;
+
     @EJB
     DataverseLinkingServiceBean dvLinking;
     
     @EJB
     DatasetLinkingServiceBean dsLinking;
+
+    @EJB
+    DatasetFieldServiceBean dsField;
 
     @EJB
     ExplicitGroupServiceBean explicitGroups;
@@ -182,8 +192,22 @@ public class EjbDataverseEngine {
     ConfirmEmailServiceBean confirmEmailService;
     
     @EJB
-    EjbDataverseEngineInner innerEngine;
+    StorageUseServiceBean storageUseService;
+
+    @EJB
+    DataverseFeaturedItemServiceBean dataverseFeaturedItemServiceBean;
+
+    @EJB
+    LicenseServiceBean licenseServiceBean;
+
+    @EJB
+    DatasetFieldsValidator datasetFieldsValidator;
     
+    @EJB
+    EjbDataverseEngineInner innerEngine;
+
+    @EJB
+    CacheFactoryBean cacheFactory;
     
     @Resource
     EJBContext ejbCtxt;
@@ -209,7 +233,11 @@ public class EjbDataverseEngine {
 
         try {
             logRec.setUserIdentifier( aCommand.getRequest().getUser().getIdentifier() );
-            
+            // Check for rate limit exceeded. Must be done before anything else to prevent unnecessary processing.
+            if (!cacheFactory.checkRate(aCommand.getRequest().getUser(), aCommand)) {
+                throw new RateLimitCommandException(BundleUtil.getStringFromBundle("command.exception.user.ratelimited", Arrays.asList(aCommand.getClass().getSimpleName())), aCommand);
+            }
+
             // Check permissions - or throw an exception
             Map<String, ? extends Set<Permission>> requiredMap = aCommand.getRequiredPermissions();
             if (requiredMap == null) {
@@ -324,6 +352,27 @@ public class EjbDataverseEngine {
             logSvc.log(logRec);
         }
     }
+
+    /**
+     * Submits a command for asynchronous execution.
+     * The command will be executed in a separate thread and won't block the caller.
+     * 
+     * @param <R> The return type of the command
+     * @param aCommand The command to execute
+     * @return A Future representing the pending result
+     * @throws CommandException if the command cannot be submitted
+     */
+    @Asynchronous
+    public <R> Future<R> submitAsync(Command<R> aCommand) throws CommandException {
+        try {
+            logger.log(Level.INFO, "Submitting async command: {0}", aCommand.getClass().getSimpleName());
+            R result = submit(aCommand);
+            return new AsyncResult<>(result);
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Async command execution failed: " + aCommand.getClass().getSimpleName(), e);
+            throw e;
+        }
+    }
     
     protected void completeCommand(Command command, Object r, Stack<Command> called) {
         
@@ -422,8 +471,8 @@ public class EjbDataverseEngine {
                 }
 
                 @Override
-                public SearchServiceBean search() {
-                    return searchService;
+                public SearchServiceFactory search() {
+                    return searchServiceFactory;
                 }
 
                 @Override
@@ -477,25 +526,10 @@ public class EjbDataverseEngine {
                 }
 
                 @Override
-                public DOIEZIdServiceBean doiEZId() {
-                    return doiEZId;
+                public PidProviderFactoryBean pidProviderFactory() {
+                    return pidProviderFactory;
                 }
                 
-                @Override
-                public DOIDataCiteServiceBean doiDataCite() {
-                    return doiDataCite;
-                }
-
-                @Override
-                public FakePidProviderServiceBean fakePidProvider() {
-                    return fakePidProvider;
-                }
-
-                @Override
-                public HandlenetServiceBean handleNet() {
-                    return handleNet;
-                }
-
                 @Override
                 public SettingsServiceBean settings() {
                     return settings;
@@ -520,6 +554,32 @@ public class EjbDataverseEngine {
                 public DatasetLinkingServiceBean dsLinking() {
                     return dsLinking;
                 }
+
+                @Override
+                public DatasetFieldServiceBean dsField() {
+                    return dsField;
+                }
+
+                @Override
+                public DataverseFeaturedItemServiceBean dataverseFeaturedItems() {
+                    return dataverseFeaturedItemServiceBean;
+                }
+
+                @Override
+                public DatasetFieldsValidator datasetFieldsValidator() {
+                    return datasetFieldsValidator;
+                }
+
+                @Override
+                public LicenseServiceBean licenses() {
+                    return licenseServiceBean;
+                }
+
+                @Override
+                public StorageUseServiceBean storageUse() {
+                    return storageUseService;
+                }
+                
                 @Override
                 public DataverseEngine engine() {
                     return new DataverseEngine() {
@@ -593,6 +653,16 @@ public class EjbDataverseEngine {
                 @Override
                 public ActionLogServiceBean actionLog() {
                     return logSvc;
+                }
+
+                @Override
+                public MetadataBlockServiceBean metadataBlocks() {
+                    return metadataBlockService;
+                }
+
+                @Override
+                public DatasetTypeServiceBean datasetTypes() {
+                    return datasetTypeService;
                 }
 
                 @Override

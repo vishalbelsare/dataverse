@@ -10,13 +10,14 @@ import edu.harvard.iq.dataverse.Dataverse;
 import edu.harvard.iq.dataverse.DataverseServiceBean;
 import edu.harvard.iq.dataverse.DataverseSession;
 import edu.harvard.iq.dataverse.DvObject;
-import edu.harvard.iq.dataverse.EMailValidator;
+import edu.harvard.iq.dataverse.validation.EMailValidator;
 import edu.harvard.iq.dataverse.PermissionServiceBean;
 import edu.harvard.iq.dataverse.PermissionsWrapper;
 import edu.harvard.iq.dataverse.RoleAssignment;
 import edu.harvard.iq.dataverse.SettingsWrapper;
-import edu.harvard.iq.dataverse.UserNameValidator;
+import edu.harvard.iq.dataverse.validation.UserNameValidator;
 import edu.harvard.iq.dataverse.UserNotification;
+import edu.harvard.iq.dataverse.UserNotification.Type;
 import edu.harvard.iq.dataverse.UserNotificationServiceBean;
 import edu.harvard.iq.dataverse.UserServiceBean;
 import edu.harvard.iq.dataverse.authorization.AuthUtil;
@@ -35,6 +36,8 @@ import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
+import static edu.harvard.iq.dataverse.util.StringUtil.toOption;
+
 import edu.harvard.iq.dataverse.util.SystemConfig;
 import edu.harvard.iq.dataverse.validation.PasswordValidatorServiceBean;
 import java.io.UnsupportedEncodingException;
@@ -46,19 +49,28 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.component.UIComponent;
-import javax.faces.component.UIInput;
-import javax.faces.context.FacesContext;
-import javax.faces.event.ActionEvent;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
+import java.util.stream.Collectors;
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.component.UIComponent;
+import jakarta.faces.component.UIInput;
+import jakarta.faces.context.ExternalContext;
+import jakarta.faces.context.FacesContext;
+import jakarta.faces.event.ActionEvent;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.constraints.NotBlank;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.AbstractOAuth2AuthenticationProvider;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.OAuth2LoginBackingBean;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.OrcidOAuth2AP;
+import java.io.IOException;
 import org.apache.commons.lang3.StringUtils;
-import org.hibernate.validator.constraints.NotBlank;
+import org.eclipse.jetty.util.StringUtil;
+import org.json.JSONObject;
 import org.primefaces.event.TabChangeEvent;
 
 /**
@@ -111,13 +123,17 @@ public class DataverseUserPage implements java.io.Serializable {
 
     @EJB
     AuthenticationServiceBean authSvc;
+    
+    @Inject
+    private OAuth2LoginBackingBean oauth2LoginBackingBean;
+
 
     private AuthenticatedUser currentUser;
-    private BuiltinUser builtinUser;    
     private AuthenticatedUserDisplayInfo userDisplayInfo;
     private transient AuthenticationProvider userAuthProvider;
     private EditMode editMode;
     private String redirectPage = "dataverse.xhtml";
+    private final String accountInfoTab = "dataverseuser.xhtml?selectTab=accountInfo";
 
     @NotBlank(message = "{password.retype}")
     private String inputPassword;
@@ -134,6 +150,12 @@ public class DataverseUserPage implements java.io.Serializable {
     private String username;
     boolean nonLocalLoginEnabled;
     private List<String> passwordErrors;
+    
+    
+    private List<Type> notificationTypeList;
+    private Set<Type> mutedEmails;
+    private Set<Type> mutedNotifications;
+    private Set<Type> disabledNotifications;
 
     public String init() {
 
@@ -161,6 +183,13 @@ public class DataverseUserPage implements java.io.Serializable {
             setCurrentUser((AuthenticatedUser) session.getUser());
             userAuthProvider = authenticationService.lookupProvider(currentUser);
             notificationsList = userNotificationService.findByUser(currentUser.getId());
+            notificationTypeList = Arrays.asList(Type.values()).stream()
+                    .filter(x -> !Type.CONFIRMEMAIL.equals(x) && x.hasDescription() && !settingsWrapper.isAlwaysMuted(x))
+                    .collect(Collectors.toList());
+            mutedEmails = new HashSet<>(currentUser.getMutedEmails());
+            mutedNotifications = new HashSet<>(currentUser.getMutedNotifications());
+            disabledNotifications = new HashSet<>(settingsWrapper.getAlwaysMutedSet());
+            disabledNotifications.addAll(settingsWrapper.getNeverMutedSet());
             
             switch (selectTab) {
                 case "notifications":
@@ -186,7 +215,7 @@ public class DataverseUserPage implements java.io.Serializable {
         } else {
             return permissionsWrapper.notAuthorized();
         }
-
+        
         return "";
     }
 
@@ -225,7 +254,7 @@ public class DataverseUserPage implements java.io.Serializable {
 
     public void validateUserEmail(FacesContext context, UIComponent toValidate, Object value) {
         String userEmail = (String) value;
-        boolean emailValid = EMailValidator.isEmailValid(userEmail, null);
+        boolean emailValid = StringUtil.isNotBlank(userEmail) && EMailValidator.isEmailValid(userEmail);
         if (!emailValid) {
             ((UIInput) toValidate).setValid(false);
             FacesMessage message = new FacesMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("oauth2.newAccount.emailInvalid"), null);
@@ -334,7 +363,7 @@ public class DataverseUserPage implements java.io.Serializable {
              */
             userNotificationService.sendNotification(au,
                     new Timestamp(new Date().getTime()),
-                    UserNotification.Type.CREATEACC, null);
+                    Type.CREATEACC, null);
 
             // go back to where user came from
             
@@ -368,6 +397,8 @@ public class DataverseUserPage implements java.io.Serializable {
             logger.info("Redirecting");
             return permissionsWrapper.notAuthorized() + "faces-redirect=true";
         }else {
+            currentUser.setMutedEmails(mutedEmails);
+            currentUser.setMutedNotifications(mutedNotifications);
             String emailBeforeUpdate = currentUser.getEmail();
             AuthenticatedUser savedUser = authenticationService.updateAuthenticatedUser(currentUser, userDisplayInfo);
             String emailAfterUpdate = savedUser.getEmail();
@@ -384,7 +415,6 @@ public class DataverseUserPage implements java.io.Serializable {
                 } catch (ConfirmEmailException ex) {
                     logger.log(Level.INFO, "Unable to send email confirmation link to user id {0}", savedUser.getId());
                 }
-                session.setUser(currentUser);
                 JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("confirmEmail.changed", args));
             } else {
                 JsfHelper.addFlashMessage(msg.toString());
@@ -418,13 +448,20 @@ public class DataverseUserPage implements java.io.Serializable {
         if (event.getTab().getId().equals("notifications")) {
             displayNotification();
         }
+
         if (event.getTab().getId().equals("dataRelatedToMe")){
             mydatapage.init();
         }
     }
 
-    private String getRoleStringFromUser(AuthenticatedUser au, DvObject dvObj) {
+    
+    private String getRoleStringFromUser(AuthenticatedUser au, DvObject dvObj, String additionalInfo) {
         // Find user's role(s) for given dataverse/dataset
+        if (additionalInfo != null && additionalInfo.contains("roleName:")) {
+            JSONObject jsonObject = new JSONObject(additionalInfo);
+            return jsonObject.getString("roleName");
+        }
+
         Set<RoleAssignment> roles = permissionService.assignmentsFor(au, dvObj);
         List<String> roleNames = new ArrayList<>();
 
@@ -451,16 +488,16 @@ public class DataverseUserPage implements java.io.Serializable {
                     // Can either be a dataverse or dataset, so search both
                     Dataverse dataverse = dataverseService.find(userNotification.getObjectId());
                     if (dataverse != null) {
-                        userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), dataverse ));
+                        userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), dataverse, userNotification.getAdditionalInfo()));
                         userNotification.setTheObject(dataverse);
                     } else {
                         Dataset dataset = datasetService.find(userNotification.getObjectId());
                         if (dataset != null){
-                            userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), dataset ));
+                            userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), dataset, userNotification.getAdditionalInfo()));
                             userNotification.setTheObject(dataset);
                         } else {
                             DataFile datafile = fileService.find(userNotification.getObjectId());
-                            userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), datafile ));
+                            userNotification.setRoleString(this.getRoleStringFromUser(this.getCurrentUser(), datafile, userNotification.getAdditionalInfo()));
                             userNotification.setTheObject(datafile);
                         }
                     }
@@ -470,6 +507,7 @@ public class DataverseUserPage implements java.io.Serializable {
                     break;
 
                 case REQUESTFILEACCESS:
+                case REQUESTEDFILEACCESS:
                     DataFile file = fileService.find(userNotification.getObjectId());
                     if (file != null) {
                         userNotification.setTheObject(file.getOwner());
@@ -478,6 +516,8 @@ public class DataverseUserPage implements java.io.Serializable {
                 case GRANTFILEACCESS:
                 case REJECTFILEACCESS:
                 case DATASETCREATED:
+                case DATASETMOVED:
+                case DATASETMENTIONED:
                     userNotification.setTheObject(datasetService.find(userNotification.getObjectId()));
                     break;
 
@@ -488,6 +528,7 @@ public class DataverseUserPage implements java.io.Serializable {
                 case RETURNEDDS:
                 case WORKFLOW_SUCCESS:
                 case WORKFLOW_FAILURE:
+                case PIDRECONCILED:
                 case STATUSUPDATED:
                     userNotification.setTheObject(datasetVersionService.find(userNotification.getObjectId()));
                     break;
@@ -502,6 +543,15 @@ public class DataverseUserPage implements java.io.Serializable {
 
                 case FILESYSTEMIMPORT:
                     userNotification.setTheObject(datasetVersionService.find(userNotification.getObjectId()));
+                    break;
+
+                case GLOBUSUPLOADCOMPLETED:
+                case GLOBUSUPLOADCOMPLETEDWITHERRORS:
+                case GLOBUSDOWNLOADCOMPLETED:
+                case GLOBUSDOWNLOADCOMPLETEDWITHERRORS:
+                case GLOBUSUPLOADREMOTEFAILURE:
+                case GLOBUSUPLOADLOCALFAILURE: 
+                    userNotification.setTheObject(datasetService.find(userNotification.getObjectId()));
                     break;
 
                 case CHECKSUMIMPORT:
@@ -521,6 +571,7 @@ public class DataverseUserPage implements java.io.Serializable {
             userNotification.setDisplayAsRead(userNotification.isReadNotification());
             if (userNotification.isReadNotification() == false) {
                 userNotification.setReadNotification(true);
+                // consider switching to userNotificationService.markAsRead
                 userNotificationService.save(userNotification);
             }
         }
@@ -546,11 +597,6 @@ public class DataverseUserPage implements java.io.Serializable {
         return !confirmEmailService.hasVerifiedEmail(currentUser);
     }
     
-    public boolean getHasActiveVerificationToken(){
-        //for user page to determine how to handle Confirm Email click
-        return confirmEmailService.hasActiveVerificationToken(currentUser);
-    }
-
     public boolean isEmailIsVerified() {
         return confirmEmailService.hasVerifiedEmail(currentUser);
     }
@@ -685,7 +731,7 @@ public class DataverseUserPage implements java.io.Serializable {
     }
 
     public boolean isNonLocalLoginEnabled() {
-        return AuthUtil.isNonLocalLoginEnabled(authenticationService.getAuthenticationProviders());
+        return AuthUtil.isNonLocalSignupEnabled(authenticationService.getAuthenticationProviders(), systemConfig);
     }
 
     public String getReasonForReturn(DatasetVersion datasetVersion) {
@@ -708,4 +754,84 @@ public class DataverseUserPage implements java.io.Serializable {
         if(notification.getRequestor() == null) return BundleUtil.getStringFromBundle("notification.email.info.unavailable");;
         return notification.getRequestor().getEmail() != null ? notification.getRequestor().getEmail() : BundleUtil.getStringFromBundle("notification.email.info.unavailable");
     }
+
+    public List<Type> getNotificationTypeList() {
+        return notificationTypeList;
+    }
+
+    public void setNotificationTypeList(List<Type> notificationTypeList) {
+        this.notificationTypeList = notificationTypeList;
+    }
+
+    public Set<Type> getToReceiveEmails() {
+        return notificationTypeList.stream().filter(
+            x -> isDisabled(x) ? !settingsWrapper.isAlwaysMuted(x) && settingsWrapper.isNeverMuted(x) : !mutedEmails.contains(x)
+        ).collect(Collectors.toSet());
+    }
+
+    public void setToReceiveEmails(Set<Type> toReceiveEmails) {
+        this.mutedEmails = notificationTypeList.stream().filter(
+            x -> !isDisabled(x) && !toReceiveEmails.contains(x)
+        ).collect(Collectors.toSet());
+    }
+
+    public Set<Type> getToReceiveNotifications() {
+        return notificationTypeList.stream().filter(
+            x -> isDisabled(x) ? !settingsWrapper.isAlwaysMuted(x) && settingsWrapper.isNeverMuted(x) : !mutedNotifications.contains(x)
+        ).collect(Collectors.toSet());
+    }
+
+    public void setToReceiveNotifications(Set<Type> toReceiveNotifications) {
+        this.mutedNotifications = notificationTypeList.stream().filter(
+            x -> !isDisabled(x) && !toReceiveNotifications.contains(x) 
+        ).collect(Collectors.toSet());
+    }
+    
+    public boolean isDisabled(Type t) {
+        return disabledNotifications.contains(t);
+    }
+
+    public boolean isOrcidEnabled() {
+        return authenticationService.getOrcidAuthenticationProvider() != null;
+    }
+
+    public void startOrcidAuthentication() {
+        OrcidOAuth2AP orcidProvider = authenticationService.getOrcidAuthenticationProvider();
+
+        if (orcidProvider == null) {
+            JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("auth.orcid.notConfigured"));
+            return;
+        }
+
+        try {
+            // Use the appropriate method to get the authorization URL
+            String state = oauth2LoginBackingBean.createState(orcidProvider, toOption(accountInfoTab));
+            String authorizationUrl = orcidProvider.buildAuthzUrl(state,
+                    systemConfig.getDataverseSiteUrl() + "/oauth2/orcidConfirm.xhtml");
+            ExternalContext externalContext = FacesContext.getCurrentInstance().getExternalContext();
+            externalContext.redirect(authorizationUrl);
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "Error starting ORCID authentication", ex);
+            JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("auth.orcid.error"));
+        }
+    }
+
+    public void removeOrcid() {
+        currentUser.setAuthenticatedOrcid(null);
+        userService.save(currentUser);
+    }
+
+    public String getOrcidForDisplay() {
+        if (currentUser == null || currentUser.getAuthenticatedOrcid() == null) {
+            return "";
+        }
+        String orcidUrl = currentUser.getAuthenticatedOrcid();
+        int index = orcidUrl.lastIndexOf('/');
+        if (index > 0) {
+            return orcidUrl.substring(index + 1);
+        } else {
+            return orcidUrl;
+        }
+    }
+
 }

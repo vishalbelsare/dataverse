@@ -1,6 +1,7 @@
 package edu.harvard.iq.dataverse.api;
 
 import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.api.auth.AuthRequired;
 import edu.harvard.iq.dataverse.provenance.ProvEntityFileData;
 import edu.harvard.iq.dataverse.provenance.ProvInvestigator;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
@@ -11,26 +12,34 @@ import edu.harvard.iq.dataverse.engine.command.impl.PersistProvFreeFormCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.PersistProvJsonCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.UpdateDatasetVersionCommand;
 import edu.harvard.iq.dataverse.util.BundleUtil;
-import java.io.StringReader;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+
 import java.util.HashMap;
 import java.util.logging.Logger;
-import javax.inject.Inject;
-import javax.json.Json;
-import javax.json.JsonException;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Response;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
+import jakarta.inject.Inject;
+import jakarta.json.Json;
+import jakarta.json.JsonException;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Response;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.FORBIDDEN;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("files")
+@Tag(name = "Files", description = "Data file metadata, upload, replacement, and editing operations.")
 public class Prov extends AbstractApiBean {
 
     private static final Logger logger = Logger.getLogger(Prov.class.getCanonicalName());
@@ -39,9 +48,18 @@ public class Prov extends AbstractApiBean {
     
     /** Provenance JSON methods **/
     @POST
+    @AuthRequired
     @Path("{id}/prov-json")
     @Consumes("application/json")
-    public Response addProvJson(String body, @PathParam("id") String idSupplied, @QueryParam("entityName") String entityName) {
+    @Operation(summary = "Adds PROV JSON to a data file",
+            description = "Validates and stores PROV JSON for a data file after checking that the requested entity name exists in the provenance graph.")
+    public Response addProvJson(@Context ContainerRequestContext crc,
+            @RequestBody(description = "PROV JSON document to validate and store for the data file.")
+            String body,
+            @Parameter(description = "Data file id or persistent identifier whose provenance is updated.", required = true)
+            @PathParam("id") String idSupplied,
+            @Parameter(description = "Entity name in the PROV JSON graph that represents the data file.", required = true)
+            @QueryParam("entityName") String entityName) {
         if(!systemConfig.isProvCollectionEnabled()) {
             return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.provDisabled"));
         }
@@ -54,8 +72,9 @@ public class Prov extends AbstractApiBean {
                 return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.jsonUpdateNotAllowed"));
             }
             
-            if(!provUtil.isProvValid(body)) {
-                return error(BAD_REQUEST, BundleUtil.getStringFromBundle("file.editProvenanceDialog.invalidSchemaError"));
+            var schemaErrorMessages = provUtil.optionalProvValidationMessage(body);
+            if(!schemaErrorMessages.isEmpty()) {
+                return error(BAD_REQUEST, BundleUtil.getStringFromBundle("file.editProvenanceDialog.invalidSchemaError") + schemaErrorMessages.get());
             }
             
             /*Add when we actually integrate provCpl*/
@@ -68,8 +87,8 @@ public class Prov extends AbstractApiBean {
                 return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.entityMismatch"));
             }
             
-            execCommand(new PersistProvJsonCommand(createDataverseRequest(findUserOrDie()), dataFile , body, entityName, true));
-            JsonObjectBuilder jsonResponse = Json.createObjectBuilder();
+            execCommand(new PersistProvJsonCommand(createDataverseRequest(getRequestUser(crc)), dataFile , body, entityName, true));
+            JsonObjectBuilder jsonResponse = JsonUtil.createObjectBuilder();
             jsonResponse.add("message", BundleUtil.getStringFromBundle("api.prov.provJsonSaved") + " " + dataFile.getDisplayName());
             return ok(jsonResponse);
         } catch (WrappedResponse ex) {
@@ -78,8 +97,15 @@ public class Prov extends AbstractApiBean {
     }
     
     @DELETE
+    @AuthRequired
     @Path("{id}/prov-json")
-    public Response deleteProvJson(String body, @PathParam("id") String idSupplied) {
+    @Operation(summary = "Deletes PROV JSON from a data file",
+            description = "Deletes stored PROV JSON from an unreleased data file.")
+    public Response deleteProvJson(@Context ContainerRequestContext crc,
+            @RequestBody(description = "Unused request body accepted by the endpoint.")
+            String body,
+            @Parameter(description = "Data file id or persistent identifier whose PROV JSON is deleted.", required = true)
+            @PathParam("id") String idSupplied) {
         if(!systemConfig.isProvCollectionEnabled()) {
             return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.provDisabled"));
         }
@@ -88,7 +114,7 @@ public class Prov extends AbstractApiBean {
             if(dataFile.isReleased()){
                 return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.jsonDeleteNotAllowed"));
             }
-            execCommand(new DeleteProvJsonCommand(createDataverseRequest(findUserOrDie()), dataFile, true));
+            execCommand(new DeleteProvJsonCommand(createDataverseRequest(getRequestUser(crc)), dataFile, true));
             return ok(BundleUtil.getStringFromBundle("api.prov.provJsonDeleted"));
         } catch (WrappedResponse ex) {
             return ex.getResponse();
@@ -97,17 +123,23 @@ public class Prov extends AbstractApiBean {
 
     /** Provenance FreeForm methods **/
     @POST
+    @AuthRequired
     @Path("{id}/prov-freeform")
     @Consumes("application/json")
-    public Response addProvFreeForm(String body, @PathParam("id") String idSupplied) {
+    @Operation(summary = "Adds free-form provenance to a data file",
+            description = "Stores free-form provenance text for a data file from the text field of the supplied JSON and updates the dataset draft version.")
+    public Response addProvFreeForm(@Context ContainerRequestContext crc,
+            @RequestBody(description = "JSON object containing a text field with free-form provenance.")
+            String body,
+            @Parameter(description = "Data file id or persistent identifier whose free-form provenance is updated.", required = true)
+            @PathParam("id") String idSupplied) {
         if(!systemConfig.isProvCollectionEnabled()) {
             return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.provDisabled"));
         }
-        StringReader rdr = new StringReader(body);
         JsonObject jsonObj = null;
         
         try {
-            jsonObj = Json.createReader(rdr).readObject();
+            jsonObj = JsonUtil.getJsonObject(body);
         } catch (JsonException ex) {
             return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.freeformInvalidJson"));
         }
@@ -118,7 +150,7 @@ public class Prov extends AbstractApiBean {
             return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.freeformMissingJsonKey"));
         }
         try {
-            DataverseRequest dr= createDataverseRequest(findUserOrDie());
+            DataverseRequest dr= createDataverseRequest(getRequestUser(crc));
             DataFile dataFile = findDataFileOrDie(idSupplied);
             if (dataFile == null) {
                 return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.badDataFileId"));
@@ -126,7 +158,7 @@ public class Prov extends AbstractApiBean {
             execCommand(new PersistProvFreeFormCommand(dr, dataFile, provFreeForm));
             execCommand(new UpdateDatasetVersionCommand(dataFile.getOwner(), dr));
             dataFile = findDataFileOrDie(idSupplied);
-            JsonObjectBuilder jsonResponse = Json.createObjectBuilder();
+            JsonObjectBuilder jsonResponse = JsonUtil.createObjectBuilder();
             jsonResponse.add("message", "Free-form provenance data saved for Data File : " + dataFile.getFileMetadata().getProvFreeForm());
             return ok(jsonResponse);
         } catch (WrappedResponse ex) {
@@ -136,17 +168,24 @@ public class Prov extends AbstractApiBean {
     }
     
     @GET
+    @AuthRequired
     @Path("{id}/prov-freeform")
-    public Response getProvFreeForm(String body, @PathParam("id") String idSupplied) {
+    @Operation(summary = "Returns free-form provenance for a data file",
+            description = "Returns stored free-form provenance text for the specified data file.")
+    public Response getProvFreeForm(@Context ContainerRequestContext crc,
+            @RequestBody(description = "Unused request body accepted by the endpoint.")
+            String body,
+            @Parameter(description = "Data file id or persistent identifier whose free-form provenance is returned.", required = true)
+            @PathParam("id") String idSupplied) {
         if(!systemConfig.isProvCollectionEnabled()) {
             return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.provDisabled"));
         }
         try {
-            String freeFormText = execCommand(new GetProvFreeFormCommand(createDataverseRequest(findUserOrDie()), findDataFileOrDie(idSupplied)));
+            String freeFormText = execCommand(new GetProvFreeFormCommand(createDataverseRequest(getRequestUser(crc)), findDataFileOrDie(idSupplied)));
             if(null == freeFormText) {
                 return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.freeformNoText"));
             }
-            JsonObjectBuilder jsonResponse = Json.createObjectBuilder();
+            JsonObjectBuilder jsonResponse = JsonUtil.createObjectBuilder();
             jsonResponse.add("text", freeFormText);
             return ok(jsonResponse);
         } catch (WrappedResponse ex) {
@@ -155,17 +194,24 @@ public class Prov extends AbstractApiBean {
     }
     
     @GET
+    @AuthRequired
     @Path("{id}/prov-json")
-    public Response getProvJson(String body, @PathParam("id") String idSupplied) {
+    @Operation(summary = "Returns PROV JSON for a data file",
+            description = "Returns stored PROV JSON for the specified data file.")
+    public Response getProvJson(@Context ContainerRequestContext crc,
+            @RequestBody(description = "Unused request body accepted by the endpoint.")
+            String body,
+            @Parameter(description = "Data file id or persistent identifier whose PROV JSON is returned.", required = true)
+            @PathParam("id") String idSupplied) {
         if(!systemConfig.isProvCollectionEnabled()) {
             return error(FORBIDDEN, BundleUtil.getStringFromBundle("api.prov.error.provDisabled"));
         }
         try {
-            JsonObject jsonText = execCommand(new GetProvJsonCommand(createDataverseRequest(findUserOrDie()), findDataFileOrDie(idSupplied)));
+            JsonObject jsonText = execCommand(new GetProvJsonCommand(createDataverseRequest(getRequestUser(crc)), findDataFileOrDie(idSupplied)));
             if(null == jsonText) {
                 return error(BAD_REQUEST, BundleUtil.getStringFromBundle("api.prov.error.jsonNoContent"));
             }
-            JsonObjectBuilder jsonResponse = Json.createObjectBuilder();
+            JsonObjectBuilder jsonResponse = JsonUtil.createObjectBuilder();
             jsonResponse.add("json", jsonText.toString());
             return ok(jsonResponse);
         } catch (WrappedResponse ex) {

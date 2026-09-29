@@ -8,13 +8,13 @@ package edu.harvard.iq.dataverse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
-import javax.persistence.TypedQuery;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+import jakarta.persistence.TypedQuery;
 
 /**
  *
@@ -43,12 +43,41 @@ public class DataverseLinkingServiceBean implements java.io.Serializable {
     }
 
     public List<Dataverse> findLinkingDataverses(Long dataverseId) {
+
+        return findLinkingDataverses(dataverseId, "");
+    }
+    
+    public List<Dataverse> findLinkingDataverses(Long dataverseId, String searchTerm) {
         List<Dataverse> retList = new ArrayList<>();
-        TypedQuery<DataverseLinkingDataverse> typedQuery = em.createNamedQuery("DataverseLinkingDataverse.findByDataverseId", DataverseLinkingDataverse.class)
-            .setParameter("dataverseId", dataverseId);
-        for (DataverseLinkingDataverse dataverseLinkingDataverse : typedQuery.getResultList()) {
-            retList.add(dataverseLinkingDataverse.getLinkingDataverse());
+        if (searchTerm == null || searchTerm.isEmpty()) {
+            TypedQuery<DataverseLinkingDataverse> typedQuery = em.createNamedQuery("DataverseLinkingDataverse.findByDataverseId", DataverseLinkingDataverse.class)
+                    .setParameter("dataverseId", dataverseId);
+            for (DataverseLinkingDataverse dataverseLinkingDataverse : typedQuery.getResultList()) {
+                retList.add(dataverseLinkingDataverse.getLinkingDataverse());
+            }
+
+        } else {
+            
+            String pattern = searchTerm.toLowerCase();
+
+            String pattern1 = pattern + "%";
+            String pattern2 = "% " + pattern + "%";
+
+            // Adjust the queries for very short, 1 and 2-character patterns:
+            if (pattern.length() == 1) {
+                pattern1 = pattern;
+                pattern2 = pattern + " %";
+            }
+            TypedQuery<Long> typedQuery
+                    = em.createNamedQuery("DataverseLinkingDataverse.findByDataverseIdAndLinkingDataverseName", Long.class)
+                            .setParameter(1, dataverseId).setParameter(2, "%dataverse").setParameter(3, pattern1)
+                            .setParameter(4, pattern2).setParameter(5, "%dataverse").setParameter(6, pattern1).setParameter(7, pattern2);
+
+            for (Long id : typedQuery.getResultList()) {
+                retList.add(dataverseService.find(id));
+            }
         }
+
         return retList;
     }
     
@@ -66,7 +95,7 @@ public class DataverseLinkingServiceBean implements java.io.Serializable {
                 .setParameter("dataverseId", dataverseId)
                 .setParameter("linkingDataverseId", linkingDataverseId)
                 .getSingleResult();
-        } catch (javax.persistence.NoResultException e) {
+        } catch (jakarta.persistence.NoResultException e) {
             logger.fine("No DataverseLinkingDataverse found for dataverseId " + dataverseId + " and linkedDataverseId " + linkingDataverseId);        
             return null;
         }

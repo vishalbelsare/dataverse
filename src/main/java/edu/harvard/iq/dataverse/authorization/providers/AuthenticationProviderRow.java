@@ -2,13 +2,14 @@ package edu.harvard.iq.dataverse.authorization.providers;
 
 import edu.harvard.iq.dataverse.authorization.AuthenticationProvider;
 import java.util.Objects;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.Index;
-import javax.persistence.Lob;
-import javax.persistence.NamedQueries;
-import javax.persistence.NamedQuery;
-import javax.persistence.Table;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Lob;
+import jakarta.persistence.NamedQueries;
+import jakarta.persistence.NamedQuery;
+import jakarta.persistence.Table;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  * Database-storable form of an {@code AuthenticationProvider}.
@@ -28,6 +29,7 @@ import javax.persistence.Table;
 })
 @Entity
 @Table(indexes = {@Index(columnList="enabled")})
+@Schema(description = "Persisted authentication provider configuration, including provider id, display text, factory alias, enabled state, and factory data.")
 public class AuthenticationProviderRow implements java.io.Serializable {
     
     @Id
@@ -43,6 +45,7 @@ public class AuthenticationProviderRow implements java.io.Serializable {
     
     private String factoryAlias;
     
+    //Enabled for login (and possibly for registration depending on the :AllowRemoteAuthSignUp setting)
     private boolean enabled;
     
     @Lob

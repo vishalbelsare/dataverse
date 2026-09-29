@@ -2,7 +2,6 @@
 package edu.harvard.iq.dataverse.metadataimport;
 
 
-import edu.harvard.iq.dataverse.ControlledVocabularyValue;
 import edu.harvard.iq.dataverse.DatasetVersion;
 import edu.harvard.iq.dataverse.DatasetField;
 import edu.harvard.iq.dataverse.DatasetFieldCompoundValue;
@@ -11,19 +10,21 @@ import edu.harvard.iq.dataverse.DatasetFieldType;
 import edu.harvard.iq.dataverse.DatasetFieldValue;
 import edu.harvard.iq.dataverse.ForeignMetadataFieldMapping;
 import edu.harvard.iq.dataverse.ForeignMetadataFormatMapping;
+import edu.harvard.iq.dataverse.util.xml.XmlUtil;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.logging.Logger;
 import java.io.StringReader;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.ejb.EJB;
-import javax.ejb.EJBException;
-import javax.persistence.EntityManager;
-import javax.persistence.NoResultException;
-import javax.persistence.PersistenceContext;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.ejb.EJB;
+import jakarta.ejb.EJBException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
+import jakarta.persistence.PersistenceContext;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
@@ -69,7 +70,7 @@ public class ForeignMetadataImportServiceBean {
         
         try {
             reader = new StringReader(xmlToParse);
-            XMLInputFactory xmlFactory = javax.xml.stream.XMLInputFactory.newInstance();
+            XMLInputFactory xmlFactory = XmlUtil.getSecureXMLInputFactory();
             xmlr =  xmlFactory.createXMLStreamReader(reader);
             processXML(xmlr, mappingSupported, datasetVersion);
         
@@ -96,7 +97,7 @@ public class ForeignMetadataImportServiceBean {
         
         try {
             in = new FileInputStream(xmlFile);
-            XMLInputFactory xmlFactory = javax.xml.stream.XMLInputFactory.newInstance();
+            XMLInputFactory xmlFactory = XmlUtil.getSecureXMLInputFactory();
             xmlr =  xmlFactory.createXMLStreamReader(in);
             processXML(xmlr, mappingSupported, datasetVersion);
         } catch (FileNotFoundException ex) {

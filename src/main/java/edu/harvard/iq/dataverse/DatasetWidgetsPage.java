@@ -9,15 +9,19 @@ import edu.harvard.iq.dataverse.engine.command.impl.UpdateDatasetThumbnailComman
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.FileUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
+import edu.harvard.iq.dataverse.util.SystemConfig;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.context.FacesContext;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.primefaces.event.FileUploadEvent;
 import org.primefaces.model.file.UploadedFile;
 
@@ -32,6 +36,9 @@ public class DatasetWidgetsPage implements java.io.Serializable {
 
     @EJB
     EjbDataverseEngine commandEngine;
+    
+    @EJB
+    SystemConfig systemConfig;
 
     @Inject
     DataverseRequestServiceBean dvRequestService;
@@ -131,6 +138,12 @@ public class DatasetWidgetsPage implements java.io.Serializable {
     public void handleImageFileUpload(FileUploadEvent event) {
         logger.fine("handleImageFileUpload clicked");
         UploadedFile uploadedFile = event.getFile();
+        long maxSize = systemConfig.getThumbnailSizeLimitImage();
+        if (!FileUtil.isUploadedFileAnImage(uploadedFile, maxSize)) {
+            FacesMessage msg = new FacesMessage(FacesMessage.SEVERITY_ERROR, "Only image files are allowed.", "Only image files under " + maxSize + " bytes are allowed.");
+            FacesContext.getCurrentInstance().addMessage(null, msg);
+            return;
+        }
         try {
             updateDatasetThumbnailCommand = new UpdateDatasetThumbnailCommand(dvRequestService.getDataverseRequest(), dataset, UpdateDatasetThumbnailCommand.UserIntent.setNonDatasetFileAsThumbnail, null, uploadedFile.getInputStream());
         } catch (IOException ex) {
@@ -164,7 +177,7 @@ public class DatasetWidgetsPage implements java.io.Serializable {
         try {
             DatasetThumbnail datasetThumbnailFromCommand = commandEngine.submit(updateDatasetThumbnailCommand);
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("dataset.thumbnailsAndWidget.success"));
-            return "/dataset.xhtml?persistentId=" + dataset.getGlobalIdString() + "&faces-redirect=true";
+            return "/dataset.xhtml?persistentId=" + dataset.getGlobalId().asString() + "&faces-redirect=true";
         } catch (CommandException ex) {
             String error = ex.getLocalizedMessage();
             /**
@@ -179,7 +192,7 @@ public class DatasetWidgetsPage implements java.io.Serializable {
 
     public String cancel() {
         logger.fine("cancel clicked");
-        return "/dataset.xhtml?persistentId=" + dataset.getGlobalIdString() + "&faces-redirect=true";
+        return "/dataset.xhtml?persistentId=" + dataset.getGlobalId().asString() + "&faces-redirect=true";
     }
 
 }

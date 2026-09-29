@@ -11,8 +11,9 @@
       lang="#{dataverseSession.localeCode}"
       xml:lang="#{dataverseSession.localeCode}">
     <f:view locale="#{dataverseSession.localeCode}">
+    <ui:insert name="metadata" />
     <h:head>
-	<o:importFunctions type="edu.harvard.iq.dataverse.util.MarkupChecker" />
+        <o:importFunctions type="edu.harvard.iq.dataverse.util.MarkupChecker" />
         <f:facet name="first">
             <o:resourceInclude path="/CustomizationFilesServlet?customFileType=analytics" />
             <title><h:outputText value="#{pageTitle}"/></title>
@@ -39,12 +40,6 @@
         <link type="text/css" rel="stylesheet" href="#{resource['css/fontcustom.css']}?version=#{settingsWrapper.appVersion}" />
         <link type="text/css" rel="stylesheet" href="#{resource['css/socicon.css']}?version=#{settingsWrapper.appVersion}" />
         <link type="text/css" rel="stylesheet" href="#{resource['css/structure.css']}?version=#{settingsWrapper.appVersion}" />
-        <ui:fragment rendered="#{!widgetWrapper.widgetView}">
-            <script>
-                // Break out of iframe
-                if (window !== top) top.location = window.location;
-            </script>
-        </ui:fragment>
 	<ui:fragment rendered="#{!empty settingsWrapper.get(':StyleCustomizationFile')}">
             <style>
                 /* Custom CSS */
@@ -76,17 +71,18 @@
             </f:facet>
             <f:facet name="complete">
                 <!-- DO NOTHING -->
-            </f:facet>
+            </f:facet> 
         </p:ajaxStatus>
         <ui:include src="contactFormFragment.xhtml"></ui:include>
         <script src="#{resource['js/dv_rebind_bootstrap_ui.js']}?version=#{settingsWrapper.appVersion}"></script>
-        <script defer="defer" src="#{resource['bs/js/bootstrap.min.js']}?version=#{settingsWrapper.appVersion}"></script>
+        <script src="#{resource['bs/js/bootstrap.min.js']}?version=#{settingsWrapper.appVersion}"></script>
         <script defer="defer" src="#{resource['js/ie-compat.js']}?version=#{settingsWrapper.appVersion}"></script>
         <script defer="defer" src="#{resource['js/owl.carousel.js']}?version=#{settingsWrapper.appVersion}"></script>
         <script defer="defer" src="#{resource['js/jquery.matchHeight.js']}?version=#{settingsWrapper.appVersion}"></script>
-        <script defer="defer" src="#{resource['js/jquery.sharrre.js']}?version=#{settingsWrapper.appVersion}"></script>
-        <script defer="defer" src="#{resource['js/clipboard.min.js']}?version=#{settingsWrapper.appVersion}"></script>
-        <ui:fragment rendered="#{settingsWrapper.getCVocConf().size() > 0}">
+        <script src="#{resource['js/jquery.sharrre.js']}?version=#{settingsWrapper.appVersion}"></script>
+        <script src="#{resource['js/clipboard.min.js']}?version=#{settingsWrapper.appVersion}"></script>
+        <o:onloadScript>bind_bsui_components();</o:onloadScript>
+        <ui:fragment rendered="#{settingsWrapper.getCVocConf(false).size() > 0}">
             <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
             <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         </ui:fragment> 
@@ -108,9 +104,6 @@
                     }
                     ;
                 });
-                
-                // Rebind bootstrap UI components
-                bind_bsui_components();
             });
             function clickSupportLink() {
                 $("[id$='headerSupportLink']").click();

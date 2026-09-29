@@ -21,22 +21,23 @@ import edu.harvard.iq.dataverse.util.JsfHelper;
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
-import javax.ejb.EJB;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.ejb.EJB;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.apache.commons.io.IOUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import javax.faces.application.FacesMessage;
-import javax.faces.context.ExternalContext;
-import javax.faces.context.FacesContext;
-import javax.json.JsonObject;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.context.ExternalContext;
+import jakarta.faces.context.FacesContext;
+import jakarta.json.JsonObject;
 import org.primefaces.model.file.UploadedFile;
 
 /**
@@ -94,14 +95,13 @@ public class ProvPopupFragmentBean extends AbstractApiBean implements java.io.Se
         provJsonState = IOUtils.toString(jsonUploadedTempFile.getInputStream());
         
         
-        if(!provUtil.isProvValid(provJsonState)) { //if uploaded prov-json does not comply with schema
+        provUtil.optionalProvValidationMessage(provJsonState).ifPresentOrElse(message -> { //if uploaded prov-json does not comply with schema
             Logger.getLogger(ProvPopupFragmentBean.class.getName())
                     .log(Level.INFO, BundleUtil.getStringFromBundle("file.editProvenanceDialog.invalidSchemaError")); 
+            provJsonState = null;
             removeJsonAndRelatedData();
-            JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("file.editProvenanceDialog.invalidSchemaError"));
-        }
-        
-        else {
+            JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("file.editProvenanceDialog.invalidSchemaError"), "Reason: " + message);
+        }, () -> {
             try {
                 generateProvJsonParsedEntities();
 
@@ -115,7 +115,7 @@ public class ProvPopupFragmentBean extends AbstractApiBean implements java.io.Se
                 removeJsonAndRelatedData();
                 JH.addMessage(FacesMessage.SEVERITY_ERROR, BundleUtil.getStringFromBundle("file.editProvenanceDialog.noEntitiesError"));
             }
-        }
+        });
 
     }
     
@@ -499,7 +499,7 @@ public class ProvPopupFragmentBean extends AbstractApiBean implements java.io.Se
 
         OutputStream output = ec.getResponseOutputStream();
         
-        OutputStreamWriter osw = new OutputStreamWriter(output, "UTF-8");
+        OutputStreamWriter osw = new OutputStreamWriter(output, StandardCharsets.UTF_8);
         osw.write(provJsonState); //the button calling this will only be rendered if provJsonState exists (e.g. a file is uploaded)
         osw.close();
         fc.responseComplete();

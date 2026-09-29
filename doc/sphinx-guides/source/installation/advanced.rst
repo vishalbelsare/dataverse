@@ -7,17 +7,20 @@ Advanced installations are not officially supported but here we are at least doc
 .. contents:: |toctitle|
 	:local:
 
+.. _multiple-app-servers:
+
 Multiple App Servers
 --------------------
 
 You should be conscious of the following when running multiple app servers.
 
 - Only one app server can be the dedicated timer server, as explained in the :doc:`/admin/timers` section of the Admin Guide.
-- When users upload a logo or footer for their Dataverse collection using the "theme" feature described in the :doc:`/user/dataverse-management` section of the User Guide, these logos are stored only on the app server the user happened to be on when uploading the logo. By default these logos and footers are written to the directory ``/usr/local/payara5/glassfish/domains/domain1/docroot/logos``.
-- When a sitemap is created by an app server it is written to the filesystem of just that app server. By default the sitemap is written to the directory ``/usr/local/payara5/glassfish/domains/domain1/docroot/sitemap``.
+- When users upload a logo or footer for their Dataverse collection using the "theme" feature described in the :doc:`/user/dataverse-management` section of the User Guide, these logos are stored only on the app server the user happened to be on when uploading the logo. By default these logos and footers are written to the directory ``/usr/local/payara7/glassfish/domains/domain1/docroot/logos``.
+- When a sitemap is created by an app server it is written to the filesystem of just that app server. By default the sitemap is written to the directory ``/usr/local/payara7/glassfish/domains/domain1/docroot/sitemap``.
 - If Make Data Count is used, its raw logs must be copied from each app server to single instance of Counter Processor. See also :ref:`:MDCLogPath` section in the Configuration section of this guide and the :doc:`/admin/make-data-count` section of the Admin Guide.
 - Dataset draft version logging occurs separately on each app server. See :ref:`edit-draft-versions-logging` section in Monitoring of the Admin Guide for details.
 - Password aliases (``dataverse.db.password``, etc.) are stored per app server.
+- Each app server generates its own signing secret at startup unless one is configured, so a signed URL created on one server cannot be validated on another (and no signed URL survives a restart). Set :ref:`dataverse.api.signing-secret` to the same value (at least 36 characters) on every app server if you use signed URLs.
 
 Detecting Which App Server a User Is On
 +++++++++++++++++++++++++++++++++++++++
@@ -39,20 +42,24 @@ Please note that :ref:`network-ports` under the Configuration section has more i
 Licensing
 ---------
 
-Dataverse allows superusers to specify the list of allowed licenses, to define which license is the default, to decide whether users can instead define custom terms, and to mark obsolete licenses as 'inactive' to stop further use of them.
-These can be accomplished using the :ref:`:native API <license-management-api>` and the :ref:`:AllowCustomTermsOfUse <:AllowCustomTermsOfUse>` setting.
+Dataverse allows superusers to specify the list of allowed licenses, to define which license is the default, to decide whether users can instead define custom terms, and to mark obsolete licenses as "inactive" to stop further use of them.
+These can be accomplished using the :ref:`native API <license-management-api>` and the :ref:`:AllowCustomTermsOfUse <:AllowCustomTermsOfUse>` setting. See also :ref:`license-config`.
+
+.. _standardizing-custom-licenses:
 
 Standardizing Custom Licenses
 +++++++++++++++++++++++++++++
 
 In addition, if many datasets use the same set of Custom Terms, it may make sense to create and register a standard license including those terms. Doing this would include:
+
 - Creating and posting an external document that includes the custom terms, i.e. an HTML document with sections corresponding to the terms fields that are used.
-- Defining a name, short description, URL (where it is posted), and optionally an icon URL for this license
-- Using the Dataverse API to register the new license as one of the options available in your installation
-- Using the API to make sure the license is active and deciding whether the license should also be the default
+- Defining a name, short description, URL (where it is posted), and optionally an icon URL for this license.
+- Using the Dataverse API to register the new license as one of the options available in your installation.
+- Using the API to make sure the license is active and deciding whether the license should also be the default.
 - Once the license is registered with Dataverse, making an SQL update to change datasets/versions using that license to reference it instead of having their own copy of those custom terms.
 
 The benefits of this approach are:
+
 - usability: the license can be selected for new datasets without allowing custom terms and without users having to cut/paste terms or collection administrators having to configure templates with those terms
 - efficiency: custom terms are stored per dataset whereas licenses are registered once and all uses of it refer to the same object and external URL
 - security: with the license terms maintained external to Dataverse, users cannot edit specific terms and curators do not need to check for edits
@@ -68,45 +75,73 @@ Once a standardized version of you Custom Terms are registered as a license, an 
 Optional Components
 -------------------
 
+.. _zipdownloader:
+
 Standalone "Zipper" Service Tool
 ++++++++++++++++++++++++++++++++
 
-As of Dataverse Software 5.0 we offer an experimental optimization for the multi-file, download-as-zip functionality. If this option
-(``:CustomZipDownloadServiceUrl``) is enabled, instead of enforcing
-the size limit on multi-file zipped downloads (as normally specified
-by the option ``:ZipDownloadLimit``), we attempt to serve all the
-files that the user requested (that they are authorized to download),
-but the request is redirected to a standalone zipper service running
-as a cgi-bin executable under Apache. Thus moving these potentially
-long-running jobs completely outside the Application Server (Payara);
-and preventing worker threads from becoming locked serving them. Since
-zipping is also a CPU-intensive task, it is possible to have this
-service running on a different host system, freeing the cycles on the
-main Application Server. (The system running the service needs to have
-access to the database as well as to the storage filesystem, and/or S3
-bucket).
+As of Dataverse Software 5.0 we offer an **experimental** optimization for the multi-file, download-as-zip functionality.
+If this option (``:CustomZipDownloadServiceUrl``) is enabled, instead of enforcing the size limit on multi-file zipped
+downloads (as normally specified by the option ``:ZipDownloadLimit``), we attempt to serve all the files that the user
+requested (that they are authorized to download), but the request is redirected to a standalone zipper service running
+as a cgi-bin executable under Apache. This moves these potentially long-running jobs completely outside the Application Server (Payara), and prevents worker threads from becoming locked serving them. Since zipping is also a CPU-intensive task, it is possible to have
+this service running on a different host system, freeing the cycles on the main Application Server. (The system running
+the service needs to have access to the database as well as to the storage filesystem, and/or S3 bucket).
 
-Please consult the scripts/zipdownload/README.md in the Dataverse Software 5.0+ source tree for more information. 
+Please consult the `README at scripts/zipdownload <https://github.com/IQSS/dataverse/tree/master/scripts/zipdownload>`_
+in the Dataverse Software 5.0+ source tree for more information.
 
-To install: You can follow the instructions in the file above to build
-``ZipDownloadService-v1.0.0.jar``. It will also be available, pre-built as part of the Dataverse Software 5.0 release on GitHub. Copy it, together with the shell
-script scripts/zipdownload/cgi-bin/zipdownload to the cgi-bin
-directory of the chosen Apache server (/var/www/cgi-bin standard). 
+To install:
 
-Make sure the shell script (zipdownload) is executable, and edit it to configure the
-database access credentials. Do note that the executable does not need
-access to the entire Dataverse installation database. A security-conscious admin
-can create a dedicated database user with access to just one table:
-``CUSTOMZIPSERVICEREQUEST``.
+1. Follow the instructions in the file above to build ``zipdownloader-0.0.1.jar``. Please note that the package name and
+   the version were changed as of the release 5.10, as part of an overall cleanup and reorganization of the project 
+   tree. In the releases 5.0-5.9 it existed under the name ``ZipDownloadService-v1.0.0``. (A pre-built jar file was
+   distributed under that name as part of the 5.0 release on GitHub. Aside from the name change, there have been no 
+   changes in the functionality of the tool). 
+2. Copy it, together with the shell script :download:`cgi-bin/zipdownload <../../../../scripts/zipdownload/cgi-bin/zipdownload>`
+   to the ``cgi-bin`` directory of the chosen Apache server (``/var/www/cgi-bin`` standard).
+3. Make sure the shell script (``zipdownload``) is executable, and edit it to configure the database access credentials.
+   Do note that the executable does not need access to the entire Dataverse installation database. A security-conscious
+   admin can create a dedicated database user with access to just one table: ``CUSTOMZIPSERVICEREQUEST``.
 
-You may need to make extra Apache configuration changes to make sure /cgi-bin/zipdownload is accessible from the outside.
-For example, if this is the same Apache that's in front of your Dataverse installation Payara instance, you will need to add another pass through statement to your configuration:
+You may need to make extra Apache configuration changes to make sure ``/cgi-bin/zipdownload`` is accessible from the outside.
+For example, if this is the same Apache that's in front of your Dataverse installation Payara instance, you will need to
+add another pass through statement to your configuration:
 
 ``ProxyPassMatch ^/cgi-bin/zipdownload !``
 
-Test this by accessing it directly at ``<SERVER URL>/cgi-bin/download``. You should get a ``404 No such download job!``. If instead you are getting an "internal server error", this may be an SELinux issue; try ``setenforce Permissive``. If you are getting a generic Dataverse collection "not found" page, review the ``ProxyPassMatch`` rule you have added. 
+Test this by accessing it directly at ``<SERVER URL>/cgi-bin/download``. You should get a ``404 No such download job!``.
+If instead you are getting an "internal server error", this may be an SELinux issue; try ``setenforce Permissive``.
+If you are getting a generic Dataverse collection "not found" page, review the ``ProxyPassMatch`` rule you have added.
 
 To activate in your Dataverse installation::
 
    curl -X PUT -d '/cgi-bin/zipdownload' http://localhost:8080/api/admin/settings/:CustomZipDownloadServiceUrl
 
+.. _external-exporters:
+
+External Metadata Exporters
++++++++++++++++++++++++++++
+
+Dataverse 5.14+ supports the configuration of external metadata exporters (just "external exporters" or "exporters" for short) as a way to add additional metadata export formats or replace built-in formats. For a list of built-in formats, see :ref:`metadata-export-formats` in the User Guide.
+
+This should be considered an **experimental** capability in that the mechanism is expected to evolve and using it may require additional effort when upgrading to new Dataverse versions.
+
+Enabling External Exporters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Use the :ref:`dataverse.spi.exporters.directory` configuration option to specify a directory from which external exporters (JAR files) should be loaded.
+
+.. _inventory-of-external-exporters:
+
+Inventory of External Exporters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For a list of external exporters, see the README at https://github.com/gdcc/dataverse-exporters. For example:
+
+- RO-Crate
+
+Developing New Exporters
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+See :doc:`/developers/metadataexport` for details about how to develop new exporters.

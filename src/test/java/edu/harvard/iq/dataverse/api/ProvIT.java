@@ -1,33 +1,43 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
-import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static junit.framework.Assert.assertEquals;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.FORBIDDEN;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class ProvIT {
+
+    private static boolean provEnabled = false;
     
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
+        Response provCollectionStatus = UtilIT.getSetting(SettingsServiceBean.Key.ProvCollectionEnabled);
+
+        provEnabled = provCollectionStatus.getStatusCode() == 200;
+        if (!provEnabled) {
+            UtilIT.enableSetting(SettingsServiceBean.Key.ProvCollectionEnabled);
+        }
     }
 
     
-    @Test 
+    @Test
     public void testFreeformDraftActions() {
+
         Response createDepositor = UtilIT.createRandomUser();
         createDepositor.prettyPrint();
         createDepositor.then().assertThat()
@@ -69,9 +79,10 @@ public class ProvIT {
         assertEquals(200, publishDataset.getStatusCode());
         
         //Provenance FreeForm
-        JsonObject provFreeFormGood = Json.createObjectBuilder()
+        JsonObject provFreeFormGood = JsonUtil.createObjectBuilder()
                 .add("text", "I inherited this file from my grandfather.")
                 .build();
+        
         Response uploadProvFreeForm = UtilIT.uploadProvFreeForm(dataFileId.toString(), provFreeFormGood, apiTokenForDepositor);
         uploadProvFreeForm.prettyPrint();
         uploadProvFreeForm.then().assertThat()
@@ -81,8 +92,7 @@ public class ProvIT {
         datasetVersions.prettyPrint();
         datasetVersions.then().assertThat()
                 .body("data[0].versionState", equalTo("DRAFT"));
-        
-        
+     
     }
     
     @Test
@@ -125,14 +135,14 @@ public class ProvIT {
         Long dataFileId = JsonPath.from(authorAddsFile.getBody().asString()).getLong("data.files[0].dataFile.id");
 
         //Provenance Json
-        JsonArray provJsonBadDueToBeingAnArray = Json.createArrayBuilder().add("bad").build();
-        JsonObject provJsonGood = Json.createObjectBuilder()
-                .add("entity", Json.createObjectBuilder()
-                    .add("d1", Json.createObjectBuilder()
+        JsonArray provJsonBadDueToBeingAnArray = JsonUtil.createArrayBuilder().add("bad").build();
+        JsonObject provJsonGood = JsonUtil.createObjectBuilder()
+                .add("entity", JsonUtil.createObjectBuilder()
+                    .add("d1", JsonUtil.createObjectBuilder()
                         .add("name", "first.txt")
                         .add("value", "#ddg.function")    
                         .add("scope", "fn"))
-                    .add("d2", Json.createObjectBuilder()
+                    .add("d2", JsonUtil.createObjectBuilder()
                         .add("rdt:name", "second.txt")
                         .add("rdt:value", "#ddg.function")    
                         .add("rdt:scope", "something"))        
@@ -155,7 +165,7 @@ public class ProvIT {
                 .statusCode(OK.getStatusCode());
 
         //Provenance FreeForm
-        JsonObject provFreeFormGood = Json.createObjectBuilder()
+        JsonObject provFreeFormGood = JsonUtil.createObjectBuilder()
                 .add("text", "I inherited this file from my grandfather.")
                 .build();
         Response uploadProvFreeForm = UtilIT.uploadProvFreeForm(dataFileId.toString(), provFreeFormGood, apiTokenForDepositor);
@@ -197,6 +207,7 @@ public class ProvIT {
                 .body("data.json", notNullValue(String.class));
         assertEquals(200, getProvJson.getStatusCode());
         
+        
         // TODO: Test that if provenance already exists in CPL (e.g. cplId in fileMetadata is not 0) upload returns error.
         //       There are currently no api endpoints to set up up this test.
         
@@ -205,11 +216,13 @@ public class ProvIT {
         deleteProvJson.then().assertThat()
                 .statusCode(FORBIDDEN.getStatusCode()); //cannot delete json of a published dataset
 
-// Command removed, redundant        
-//        Response deleteProvFreeForm = UtilIT.deleteProvFreeForm(dataFileId.toString(), apiTokenForDepositor);
-//        deleteProvFreeForm.prettyPrint();
-//        deleteProvFreeForm.then().assertThat()
-//                .statusCode(OK.getStatusCode());
         
+    }
+
+    @AfterAll
+    public static void tearDownClass() {
+        if(!provEnabled){
+            UtilIT.deleteSetting(SettingsServiceBean.Key.ProvCollectionEnabled);
+        }
     }
 }

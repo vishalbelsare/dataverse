@@ -4,10 +4,33 @@
 Dataverse Software Documentation Versions
 =========================================
 
-This list provides a way to refer to the documentation for previous versions of the Dataverse Software. In order to learn more about the updates delivered from one version to another, visit the `Releases <https://github.com/IQSS/dataverse/releases>`__ page in our GitHub repo.
+This list provides a way to refer to the documentation for previous and future versions of the Dataverse Software. In order to learn more about the updates delivered from one version to another, visit the `Releases <https://github.com/IQSS/dataverse/releases>`__ page in our GitHub repo.
 
-- 5.9
-
+- pre-release `HTML (not final!) <http://preview.guides.gdcc.io/en/develop/>`__ and `PDF (experimental!) <http://preview.guides.gdcc.io/_/downloads/en/develop/pdf/>`__ built from the :doc:`develop </developers/version-control>` branch :doc:`(how to contribute!) </contributor/documentation>`
+- |version|
+- `6.11 </en/6.11/>`__
+- `6.10.1 </en/6.10.1/>`__
+- `6.10 </en/6.10/>`__
+- `6.9 </en/6.9/>`__
+- `6.8 </en/6.8/>`__
+- `6.7.1 </en/6.7.1/>`__
+- `6.7 </en/6.7/>`__
+- `6.6 </en/6.6/>`__
+- `6.5 </en/6.5/>`__
+- `6.4 </en/6.4/>`__
+- `6.3 </en/6.3/>`__
+- `6.2 </en/6.2/>`__
+- `6.1 </en/6.1/>`__
+- `6.0 </en/6.0/>`__
+- `5.14 </en/5.14/>`__
+- `5.13 </en/5.13/>`__
+- `5.12.1 </en/5.12.1/>`__
+- `5.12 </en/5.12/>`__
+- `5.11.1 </en/5.11.1/>`__
+- `5.11 </en/5.11/>`__
+- `5.10.1 </en/5.10.1/>`__
+- `5.10 </en/5.10/>`__
+- `5.9 </en/5.9/>`__
 - `5.8 </en/5.8/>`__
 - `5.7 </en/5.7/>`__
 - `5.6 </en/5.6/>`__

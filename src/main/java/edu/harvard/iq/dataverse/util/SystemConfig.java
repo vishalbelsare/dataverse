@@ -1,48 +1,42 @@
 package edu.harvard.iq.dataverse.util;
 
 import com.ocpsoft.pretty.PrettyContext;
-
 import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.Dataverse;
 import edu.harvard.iq.dataverse.DataverseServiceBean;
 import edu.harvard.iq.dataverse.DvObjectContainer;
 import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
 import edu.harvard.iq.dataverse.authorization.providers.oauth2.AbstractOAuth2AuthenticationProvider;
-
-import static edu.harvard.iq.dataverse.datasetutility.FileSizeChecker.bytesToHumanReadable;
+import edu.harvard.iq.dataverse.settings.JvmSettings;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.validation.PasswordValidatorUtil;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringReader;
+import jakarta.json.stream.JsonParsingException;
+import org.passay.CharacterRule;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Year;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.MissingResourceException;
-import java.util.Properties;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
-import javax.json.JsonString;
-import javax.json.JsonValue;
-
-import org.passay.CharacterRule;
-import org.apache.commons.io.IOUtils;
 
 /**
  * System-wide configuration
@@ -65,43 +59,12 @@ public class SystemConfig {
    public static final String DATAVERSE_PATH = "/dataverse/";
 
     /**
-     * A JVM option for the advertised fully qualified domain name (hostname) of
-     * the Dataverse installation, such as "dataverse.example.com", which may
-     * differ from the hostname that the server knows itself as.
-     *
-     * The equivalent in DVN 3.x was "dvn.inetAddress".
-     */
-    public static final String FQDN = "dataverse.fqdn";
-    
-    /**
-     * A JVM option for specifying the "official" URL of the site.
-     * Unlike the FQDN option above, this would be a complete URL, 
-     * with the protocol, port number etc. 
-     */
-    public static final String SITE_URL = "dataverse.siteUrl";
-
-    /**
-     * A JVM option for where files are stored on the file system.
-     */
-    public static final String FILES_DIRECTORY = "dataverse.files.directory";
-
-    /**
-     * Some installations may not want download URLs to their files to be
-     * available in Schema.org JSON-LD output.
-     */
-    public static final String FILES_HIDE_SCHEMA_DOT_ORG_DOWNLOAD_URLS = "dataverse.files.hide-schema-dot-org-download-urls";
-
-    /**
      * A JVM option to override the number of minutes for which a password reset
      * token is valid ({@link #getMinutesUntilPasswordResetTokenExpires}).
      */
     private static final String PASSWORD_RESET_TIMEOUT_IN_MINUTES = "dataverse.auth.password-reset-timeout-in-minutes";
-
-    /**
-     * A common place to find the String for a sane Solr hostname:port
-     * combination.
-     */
-    private String saneDefaultForSolrHostColonPort = "localhost:8983";
+    
+    public static final String DEFAULT_KEY = "default";
 
     /**
      * The default number of datafiles that we allow to be created through 
@@ -111,9 +74,9 @@ public class SystemConfig {
     public static final long defaultZipDownloadLimit = 104857600L; // 100MB
     private static final int defaultMultipleUploadFilesLimit = 1000;
     private static final int defaultLoginSessionTimeout = 480; // = 8 hours
-
-    private static String appVersionString = null; 
-    private static String buildNumberString = null; 
+    private static final int defaultGlobusBatchLookupSize = 50; 
+    
+    private String buildNumber = null;
     
     private static final String JVM_TIMER_SERVER_OPTION = "dataverse.timerServer";
     
@@ -121,8 +84,8 @@ public class SystemConfig {
     private static final long DEFAULT_THUMBNAIL_SIZE_LIMIT_IMAGE = 3000000L; // 3 MB
     private static final long DEFAULT_THUMBNAIL_SIZE_LIMIT_PDF = 1000000L; // 1 MB
     
-    public final static String DEFAULTCURATIONLABELSET = "DEFAULT";
-    public final static String CURATIONLABELSDISABLED = "DISABLED";
+    public static final String DEFAULTCURATIONLABELSET = "DEFAULT";
+    public static final String CURATIONLABELSDISABLED = "DISABLED";
     
     public String getVersion() {
         return getVersion(false);
@@ -134,137 +97,60 @@ public class SystemConfig {
     // candidate for being moved into some kind of an application-scoped caching
     // service... some CachingService @Singleton - ? (L.A. 5.8)
     public String getVersion(boolean withBuildNumber) {
-        
-        if (appVersionString == null) {
-
-            // The Version Number is no longer supplied in a .properties file - so
-            // we can't just do 
-            //  return BundleUtil.getStringFromBundle("version.number", null, ResourceBundle.getBundle("VersionNumber", Locale.US));
-            //
-            // Instead, we'll rely on Maven placing the version number into the
-            // Manifest, and getting it from there:
-            // (this is considered a better practice, and will also allow us
-            // to maintain this number in only one place - the pom.xml file)
-            // -- L.A. 4.0.2
-            
-            // One would assume, that once the version is in the MANIFEST.MF, 
-            // as Implementation-Version:, it would be possible to obtain 
-            // said version simply as 
-            //    appVersionString = getClass().getPackage().getImplementationVersion();
-            // alas - that's not working, for whatever reason. (perhaps that's 
-            // only how it works with jar-ed packages; not with .war files).
-            // People on the interwebs suggest that one should instead 
-            // open the Manifest as a resource, then extract its attributes. 
-            // There were some complications with that too. Plus, relying solely 
-            // on the MANIFEST.MF would NOT work for those of the developers who 
-            // are using "in place deployment" (i.e., where 
-            // Netbeans runs their builds directly from the local target 
-            // directory, bypassing the war file deployment; and the Manifest 
-            // is only available in the .war file). For that reason, I am 
-            // going to rely on the pom.properties file, and use java.util.Properties 
-            // to read it. We have to look for this file in 2 different places
-            // depending on whether this is a .war file deployment, or a 
-            // developers build. (the app-level META-INF is only populated when
-            // a .war file is built; the "maven-archiver" directory, on the other 
-            // hand, is only available when it's a local build deployment).
-            // So, long story short, I'm resorting to the convoluted steps below. 
-            // It may look hacky, but it should actually be pretty solid and 
-            // reliable. 
-            
-            
-            // First, find the absolute path url of the application persistence file
-            // always supplied with the Dataverse app:
-            java.net.URL fileUrl = Thread.currentThread().getContextClassLoader().getResource("META-INF/persistence.xml");
-            String filePath = null;
-
-
-            if (fileUrl != null) {
-                filePath = fileUrl.getFile();
-                if (filePath != null) {
-                    InputStream mavenPropertiesInputStream = null;
-                    String mavenPropertiesFilePath; 
-                    Properties mavenProperties = new Properties();
-
-                    
-                    filePath = filePath.replaceFirst("/[^/]*$", "/");
-                    // Using a relative path, find the location of the maven pom.properties file. 
-                    // First, try to look for it in the app-level META-INF. This will only be 
-                    // available if it's a war file deployment: 
-                    mavenPropertiesFilePath = filePath.concat("../../../META-INF/maven/edu.harvard.iq/dataverse/pom.properties");                                     
-                    
-                    try {
-                        mavenPropertiesInputStream = new FileInputStream(mavenPropertiesFilePath);
-                    } catch (IOException ioex) {
-                        // OK, let's hope this is a local dev. build. 
-                        // In that case the properties file should be available in 
-                        // the maven-archiver directory: 
-                        
-                        mavenPropertiesFilePath = filePath.concat("../../../../maven-archiver/pom.properties");
-                        
-                        // try again: 
-                        
-                        try {
-                            mavenPropertiesInputStream = new FileInputStream(mavenPropertiesFilePath);
-                        } catch (IOException ioex2) {
-                            logger.warning("Failed to find and/or open for reading the pom.properties file.");
-                            mavenPropertiesInputStream = null; 
-                        }
-                    }
-                    
-                    if (mavenPropertiesInputStream != null) {
-                        try {
-                            mavenProperties.load(mavenPropertiesInputStream);
-                            appVersionString = mavenProperties.getProperty("version");                        
-                        } catch (IOException ioex) {
-                            logger.warning("caught IOException trying to read and parse the pom properties file.");
-                        } finally {
-                            IOUtils.closeQuietly(mavenPropertiesInputStream);
-                        }
-                    }
-                    
-                } else {
-                    logger.warning("Null file path representation of the location of persistence.xml in the webapp root directory!"); 
-                }
-            } else {
-                logger.warning("Could not find the location of persistence.xml in the webapp root directory!");
-            }
-
-            
-            if (appVersionString == null) {
-                // still null? - defaulting to 4.0:    
-                appVersionString = "4.0";
-            }
-        }
+        // Retrieve the version via MPCONFIG
+        // NOTE: You may override the version via all methods of MPCONFIG.
+        //       It will default to read from microprofile-config.properties source,
+        //       which contains in the source a Maven property reference to ${project.version}.
+        //       When packaging the app to deploy it, Maven will replace this, rendering it a static entry.
+        String appVersion = JvmSettings.VERSION.lookup();
             
         if (withBuildNumber) {
-            if (buildNumberString == null) {
-                // (build number is still in a .properties file in the source tree; it only 
-                // contains a real build number if this war file was built by 
-                // Jenkins) 
-                        
+            if (buildNumber == null) {
+                // (build number is still in a .properties file in the source tree; it only
+                // contains a real build number if this war file was built by Jenkins)
+                // TODO: might be replaced with same trick as for version via Maven property w/ empty default
                 try {
-                    buildNumberString = ResourceBundle.getBundle("BuildNumber").getString("build.number");
+                    buildNumber = ResourceBundle.getBundle("BuildNumber").getString("build.number");
                 } catch (MissingResourceException ex) {
-                    buildNumberString = null; 
+                    buildNumber = null;
+                }
+                
+                // Also try to read the build number via MicroProfile Config if not already present from the
+                // properties file (so can be overridden by env var or other source)
+                if (buildNumber == null || buildNumber.isEmpty()) {
+                    buildNumber = JvmSettings.BUILD.lookupOptional().orElse("");
                 }
             }
             
-            if (buildNumberString != null && !buildNumberString.equals("")) {
-                return appVersionString + " build " + buildNumberString; 
-            } 
-        }        
-        
-        return appVersionString; 
-    }
-
-    public String getSolrHostColonPort() {
-        String SolrHost;
-        if ( System.getenv("SOLR_SERVICE_HOST") != null && System.getenv("SOLR_SERVICE_HOST") != ""){
-            SolrHost = System.getenv("SOLR_SERVICE_HOST");
+            if (!buildNumber.equals("")) {
+                return appVersion + " " + buildNumber;
+            }
         }
-        else SolrHost = saneDefaultForSolrHostColonPort;
-        String solrHostColonPort = settingsService.getValueForKey(SettingsServiceBean.Key.SolrHostColonPort, SolrHost);
-        return solrHostColonPort;
+        
+        return appVersion;
+    }
+    
+    /**
+     * Retrieve the Solr endpoint in "host:port" form, to be used with a Solr client.
+     *
+     * This will retrieve the setting from either the database ({@link SettingsServiceBean.Key#SolrHostColonPort}) or
+     * via Microprofile Config API (properties {@link JvmSettings#SOLR_HOST} and {@link JvmSettings#SOLR_PORT}).
+     *
+     * A database setting always takes precedence. If not given via other config sources, a default from
+     * <code>resources/META-INF/microprofile-config.properties</code> is used. (It's possible to use profiles.)
+     *
+     * @return Solr endpoint as string "hostname:port"
+     */
+    public String getSolrHostColonPort() {
+        // Get from MPCONFIG. Might be configured by a sysadmin or simply return the default shipped with
+        // resources/META-INF/microprofile-config.properties.
+        // NOTE: containers should use system property mp.config.profile=ct to use sane container usage default
+        String host = JvmSettings.SOLR_HOST.lookup();
+        String port = JvmSettings.SOLR_PORT.lookup();
+        
+        // DB setting takes precedence over all. If not present, will return default from above.
+        return Optional.ofNullable(settingsService.getValueForKey(SettingsServiceBean.Key.SolrHostColonPort))
+            .orElse(host + ":" + port);
     }
 
     public boolean isProvCollectionEnabled() {
@@ -342,32 +228,58 @@ public class SystemConfig {
     }
     
     /**
-     * The "official", designated URL of the site;
-     * can be defined as a complete URL; or derived from the 
-     * "official" hostname. If none of these options is set,
-     * defaults to the InetAddress.getLocalHOst() and https;
-     * These are legacy JVM options. Will be eventualy replaced
-     * by the Settings Service configuration.
+     * Lookup (or construct) the designated URL of this instance from configuration.
+     *
+     * Can be defined as a complete URL via <code>dataverse.siteUrl</code>; or derived from the hostname
+     * <code>dataverse.fqdn</code> and HTTPS. If none of these options is set, defaults to the
+     * {@link InetAddress#getLocalHost} and HTTPS.
+     *
+     * NOTE: This method does not provide any validation.
+     * TODO: The behaviour of this method is subject to a later change, see
+     *       https://github.com/IQSS/dataverse/issues/6636
+     *
+     * @return The designated URL of this instance as per configuration.
      */
     public String getDataverseSiteUrl() {
         return getDataverseSiteUrlStatic();
     }
     
+    /**
+     * Lookup (or construct) the designated URL of this instance from configuration.
+     *
+     * Can be defined as a complete URL via <code>dataverse.siteUrl</code>; or derived from the hostname
+     * <code>dataverse.fqdn</code> and HTTPS. If none of these options is set, defaults to the
+     * {@link InetAddress#getLocalHost} and HTTPS.
+     *
+     * NOTE: This method does not provide any validation.
+     * TODO: The behaviour of this method is subject to a later change, see
+     *       https://github.com/IQSS/dataverse/issues/6636
+     *
+     * @return The designated URL of this instance as per configuration.
+     */
     public static String getDataverseSiteUrlStatic() {
-        String hostUrl = System.getProperty(SITE_URL);
-        if (hostUrl != null && !"".equals(hostUrl)) {
-            return hostUrl;
+        // If dataverse.siteUrl has been configured, simply return it
+        Optional<String> siteUrl = JvmSettings.SITE_URL.lookupOptional();
+        if (siteUrl.isPresent()) {
+            return siteUrl.get();
         }
-        String hostName = System.getProperty(FQDN);
-        if (hostName == null) {
-            try {
-                hostName = InetAddress.getLocalHost().getCanonicalHostName();
-            } catch (UnknownHostException e) {
-                return null;
-            }
+        
+        // Otherwise try to lookup dataverse.fqdn setting and default to HTTPS
+        Optional<String> fqdn = JvmSettings.FQDN.lookupOptional();
+        if (fqdn.isPresent()) {
+            return "https://" + fqdn.get();
         }
-        hostUrl = "https://" + hostName;
-        return hostUrl;
+        
+        // Last resort - get the servers local name and use it.
+        // BEWARE - this is dangerous.
+        // 1) A server might have a different name than your repository URL.
+        // 2) The underlying reverse DNS lookup might point to a different name than your repository URL.
+        // 3) If this server has multiple IPs assigned, which one will it be for the lookup?
+        try {
+            return "https://" + InetAddress.getLocalHost().getCanonicalHostName();
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
     
     /**
@@ -377,26 +289,14 @@ public class SystemConfig {
         return PrettyContext.getCurrentInstance().getRequestURL().toURL() + PrettyContext.getCurrentInstance().getRequestQueryString().toQueryString();
     }
 
-    /**
-     * The "official" server's fully-qualified domain name: 
-     */
-    public String getDataverseServer() {
-        // still reliese on a JVM option: 
-        String fqdn = System.getProperty(FQDN);
-        if (fqdn == null) {
-            try {
-                fqdn = InetAddress.getLocalHost().getCanonicalHostName();
-            } catch (UnknownHostException e) {
-                return null;
-            }
-        }
-        return fqdn;
+    public String getGuidesBaseUrl() {
+        return getGuidesBaseUrl(true);
     }
 
-    public String getGuidesBaseUrl() {
+    public String getGuidesBaseUrl(boolean includeLang) {
         String saneDefault = "https://guides.dataverse.org";
         String guidesBaseUrl = settingsService.getValueForKey(SettingsServiceBean.Key.GuidesBaseUrl, saneDefault);
-        return guidesBaseUrl + "/" + getGuidesLanguage();
+        return includeLang ? guidesBaseUrl + "/" + getGuidesLanguage() : guidesBaseUrl;
     }
 
     private String getGuidesLanguage() {
@@ -424,7 +324,7 @@ public class SystemConfig {
 
         if (limitSetting != null && !limitSetting.equals("")) {
             try {
-                limit = new Long(limitSetting);
+                limit = Long.valueOf(limitSetting);
             } catch (NumberFormatException nfe) {
                 limit = null;
             }
@@ -433,12 +333,12 @@ public class SystemConfig {
         return limit != null ? limit : defaultValue;
     }
 
-    static int getIntLimitFromStringOrDefault(String limitSetting, Integer defaultValue) {
+    public static int getIntLimitFromStringOrDefault(String limitSetting, Integer defaultValue) {
         Integer limit = null;
 
         if (limitSetting != null && !limitSetting.equals("")) {
             try {
-                limit = new Integer(limitSetting);
+                limit = Integer.valueOf(limitSetting);
             } catch (NumberFormatException nfe) {
                 limit = null;
             }
@@ -528,15 +428,24 @@ public class SystemConfig {
     }
     
     public String getApplicationTermsOfUse() {
-        String language = BundleUtil.getCurrentLocale().getLanguage();
+        return getApplicationTermsOfUse(null);
+    }
+
+    public String getApplicationTermsOfUse(String languageIn) {
+        String language = null;
+        if (languageIn != null) {
+            language = languageIn;
+        } else {
+            language = BundleUtil.getCurrentLocale().getLanguage();
+        }
         String saneDefaultForAppTermsOfUse = BundleUtil.getStringFromBundle("system.app.terms");
-        // Get the value for the defaultLocale. IT will either be used as the return
+        // Get the value for the defaultLocale. It will either be used as the return
         // value, or as a better default than the saneDefaultForAppTermsOfUse if there
         // is no language-specific value
         String appTermsOfUse = settingsService.getValueForKey(SettingsServiceBean.Key.ApplicationTermsOfUse, saneDefaultForAppTermsOfUse);
-        //Now get the language-specific value if it exists
+        // Now get the language-specific value if it exists
         if (language != null && !language.equalsIgnoreCase(BundleUtil.getDefaultLocale().getLanguage())) {
-            appTermsOfUse = settingsService.getValueForKey(SettingsServiceBean.Key.ApplicationTermsOfUse, language,	appTermsOfUse);
+            appTermsOfUse = settingsService.getValueForKey(SettingsServiceBean.Key.ApplicationTermsOfUse, language, appTermsOfUse);
         }
         return appTermsOfUse;
     }
@@ -574,7 +483,7 @@ public class SystemConfig {
         String fragSize = settingsService.getValueForKey(SettingsServiceBean.Key.SearchHighlightFragmentSize);
         if (fragSize != null) {
             try {
-                return new Integer(fragSize);
+                return Integer.valueOf(fragSize);
             } catch (NumberFormatException nfe) {
                 logger.info("Could not convert " + SettingsServiceBean.Key.SearchHighlightFragmentSize + " to int: " + nfe);
             }
@@ -582,50 +491,202 @@ public class SystemConfig {
         return null;
     }
     
-    public long getTabularIngestSizeLimit() {
-        // This method will return the blanket ingestable size limit, if 
-        // set on the system. I.e., the universal limit that applies to all 
-        // tabular ingests, regardless of fromat: 
-        
-        String limitEntry = settingsService.getValueForKey(SettingsServiceBean.Key.TabularIngestSizeLimit); 
-        
+    /**
+     * The default key used to identify tabular ingest size limits.
+     * This value represents the standard or fallback configuration.
+     * For any other valid format strings, see implementations of {@code TabularDataFileReader.getFormatName()}.
+     */
+    public static final String TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY = "default";
+    
+    /**
+     * Retrieves the tabular ingest size limits based on the system configuration.
+     * The size limits can be defined as a JSON object with format-specific limits, a single numeric value
+     * applied to all formats, or might not exist, in which case the default limit is applied.
+     *
+     * Note that the format names in the configuration will be transformed to lowercase for user convenience
+     * of how people like to write their formats best.
+     *
+     * If the configuration contains invalid data (e.g., unparsable JSON or non-numeric values),
+     * all tabular ingest operations are disabled by setting size limits to 0.
+     *
+     * TODO: At some later point, if and when the DB lookups or JSON parsing takes a toll to heavy to bear,
+     *       we may introduce a caching singleton for these. (With TTL or using events to invalidate on update.)
+     *
+     * @return a map where the keys represent format names or a default key, and the values represent the maximum allowed size for each format.
+     */
+    public Map<String, Long> getTabularIngestSizeLimits() {
+        String limitEntry = settingsService.getValueForKey(SettingsServiceBean.Key.TabularIngestSizeLimit);
         if (limitEntry != null) {
-            try {
-                Long sizeOption = new Long(limitEntry);
-                return sizeOption;
-            } catch (NumberFormatException nfe) {
-                logger.warning("Invalid value for TabularIngestSizeLimit option? - " + limitEntry);
+            // Case A: the setting is using JSON to support multiple formats
+            if (limitEntry.trim().startsWith("{")) {
+                try {
+                    JsonObject limits = JsonUtil.getJsonObject(limitEntry);
+                    
+                    Map<String, Long> limitsMap = new HashMap<>();
+                    // We add the default in case the JSON does not contain the default (which is optional).
+                    limitsMap.put(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, -1L);
+                    
+                    for (Map.Entry<String, JsonValue> format : limits.entrySet()) {
+                        String formatName = format.getKey();
+                        String lowercaseFormatName = formatName.toLowerCase();
+                        
+                        try {
+                            JsonValue value = format.getValue();
+                            long sizeOption;
+                            
+                            // We want to be able to use either numbers or string values, so detect which one it is.
+                            // This is necessary as we need to tell the JSON parser what to do, it doesn't automatically handle this for us.
+                            if (value.getValueType() == JsonValue.ValueType.STRING) {
+                                sizeOption = Long.parseLong(limits.getString(formatName));
+                            } else if (value.getValueType() == JsonValue.ValueType.NUMBER) {
+                                // Will throw if not a whole number!
+                                sizeOption = limits.getJsonNumber(formatName).longValueExact();
+                            } else {
+                                logger.warning(() -> "Invalid value type for format " + formatName + ": expected string or number");
+                                logger.warning("Disabling all tabular ingest completely until fixed!");
+                                return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, 0L);
+                            }
+                            
+                            limitsMap.put(lowercaseFormatName, sizeOption);
+                        } catch (NumberFormatException nfe) {
+                            logger.warning(() -> "Could not convert " + SettingsServiceBean.Key.TabularIngestSizeLimit + " to long for format " + formatName + " (not a valid number)");
+                            logger.warning("Disabling all tabular ingest completely until fixed!");
+                            return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, 0L);
+                        } catch (ArithmeticException ae) {
+                            logger.warning(() -> "Number too large or has fractional part for format " + formatName);
+                            logger.warning("Disabling all tabular ingest completely until fixed!");
+                            return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, 0L);
+                        }
+                    }
+                    
+                    return Collections.unmodifiableMap(limitsMap);
+                } catch (JsonParsingException e) {
+                    logger.warning(() -> "Invalid TabularIngestSizeLimit option found, cannot parse JSON: " + e.getMessage());
+                    logger.warning("Disabling all tabular ingest completely until fixed!");
+                    return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, 0L);
+                }
+            // Case B: It might be just a simple Long, providing a default for all formats.
+            } else {
+                try {
+                    Long limit = Long.valueOf(limitEntry);
+                    return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, limit);
+                } catch (NumberFormatException nfe) {
+                    logger.warning(() -> "Could not convert " + SettingsServiceBean.Key.TabularIngestSizeLimit + " to long: " + nfe);
+                    logger.warning("Disabling all tabular ingest completely until fixed!");
+                    return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, 0L);
+                }
             }
         }
-        // -1 means no limit is set; 
-        // 0 on the other hand would mean that ingest is fully disabled for 
-        // tabular data. 
-        return -1; 
+        
+        // Default is not to limit at all
+        return Map.of(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY, -1L);
     }
     
+    /**
+     * This method will return the blanket ingestable size limit, if set on the system.
+     * I.e., the universal limit that applies to all tabular ingests, regardless of fromat.
+     * @return -1 = unlimited if not set, 0 if disabled or invalid, some long number of bytes otherwise
+     */
+    public long getTabularIngestSizeLimit() {
+        return getTabularIngestSizeLimits().get(TABULAR_INGEST_SIZE_LIMITS_DEFAULT_KEY);
+    }
+    
+    /**
+     * Retrieves the size limit for tabular data ingestion based on the provided format name.
+     * The format name will be converted to lowercase, making sure the casing doesn't matter.
+     *
+     * @param formatName The name of the format for which the size limit is requested
+     *                   See also implementations of {@code TabularDataFileReader.getFormatName()} for examples.
+     * @return The size limit in bytes for tabular data ingestion associated with the specified format name,
+     *         or the default size limit if no format-specific limit is found or its name is invalid (null, blank, ...).
+     *         -1 = unlimited if not set, 0 if disabled or invalid, some long number of bytes otherwise
+     */
+    
     public long getTabularIngestSizeLimit(String formatName) {
-        // This method returns the size limit set specifically for this format name,
-        // if available, otherwise - the blanket limit that applies to all tabular 
-        // ingests regardless of a format. 
-        
-        if (formatName == null || formatName.equals("")) {
-            return getTabularIngestSizeLimit(); 
+        if (formatName != null && !formatName.isBlank()) {
+            // We convert to lowercase so it doesn't matter which variant someone uses in the JSON config
+            String convertedFormatName = formatName.toLowerCase();
+            return getTabularIngestSizeLimits().getOrDefault(convertedFormatName, getTabularIngestSizeLimit());
         }
-        
-        String limitEntry = settingsService.get(SettingsServiceBean.Key.TabularIngestSizeLimit.toString() + ":" + formatName); 
-                
-        if (limitEntry != null) {
-            try {
-                Long sizeOption = new Long(limitEntry);
-                return sizeOption;
-            } catch (NumberFormatException nfe) {
-                logger.warning("Invalid value for TabularIngestSizeLimit:" + formatName + "? - " + limitEntry );
-            }
-        }
-        
-        return getTabularIngestSizeLimit();        
+        return getTabularIngestSizeLimit();
     }
 
+    public Map<String, Float> getHarvestingClientRequestIntervals() {
+        String settingString = settingsService.getValueForKey(SettingsServiceBean.Key.HarvestingClientCallRateLimit);
+        if (settingString != null) {
+            // Case A: the setting is using JSON to support multiple clients
+            if (settingString.trim().startsWith("{")) {
+                try {
+                    JsonObject delays = JsonUtil.getJsonObject(settingString);
+                    
+                    Map<String, Float> limitsMap = new HashMap<>();
+                    // We add the default in case the JSON does not contain the default (which is optional).
+                    limitsMap.put(DEFAULT_KEY, 0F);
+                    
+                    for (Map.Entry<String, JsonValue> clientEntry : delays.entrySet()) {
+                        String clientName = clientEntry.getKey();
+                        String lowercaseClientName = clientName.toLowerCase();
+                                                
+                        try {
+                            JsonValue value = clientEntry.getValue();
+                            float delayInterval;
+                            
+                            // We want to be able to use either numbers or string values, so detect which one it is.
+                            // This is necessary as we need to tell the JSON parser what to do, it doesn't automatically handle this for us.
+                            if (value.getValueType() == JsonValue.ValueType.STRING) {
+                                delayInterval = Float.parseFloat(delays.getString(clientName));
+                            } else if (value.getValueType() == JsonValue.ValueType.NUMBER) {
+                                // Will throw if not a valid float number!
+                                delayInterval = delays.getJsonNumber(clientName).numberValue().floatValue(); //.doubleValue();
+                            } else {
+                                logger.warning(() -> "Invalid value type for client " + clientName + ": expected string or number");
+                                logger.warning("Disabling all harvesting client delay intervals completely until fixed!");
+                                return Map.of(DEFAULT_KEY, 0F);
+                            }
+                            
+                            limitsMap.put(lowercaseClientName, delayInterval);
+                        } catch (NumberFormatException nfe) {
+                            logger.warning(() -> "Could not convert " + SettingsServiceBean.Key.HarvestingClientCallRateLimit + " entry to float for client " + clientName + " (not a valid number)");
+                            logger.warning("Disabling all harvesting client delay intervals completely until fixed!");
+                            return Map.of(DEFAULT_KEY, 0F);
+                        } catch (ArithmeticException ae) {
+                            logger.warning(() -> "Number too large, or otherwise invalid for client " + clientName);
+                            logger.warning("Disabling all harvesting client delay intervals completely until fixed!");
+                            return Map.of(DEFAULT_KEY, 0F);
+                        }
+                    }
+                    
+                    return Collections.unmodifiableMap(limitsMap);
+                } catch (JsonParsingException e) {
+                    logger.warning(() -> "Invalid " + SettingsServiceBean.Key.HarvestingClientCallRateLimit + " option found, cannot parse JSON: " + e.getMessage());
+                    logger.warning("Disabling all harvesting client delay intervals completely until fixed!");
+                    return Map.of(DEFAULT_KEY, 0F);
+                }
+            // Case B: It might be just a simple float, providing a default for all clients.
+            } else {
+                try {
+                    float delayInterval = Float.valueOf(settingString);
+                    return Map.of(DEFAULT_KEY, delayInterval);
+                } catch (NumberFormatException nfe) {
+                    logger.warning(() -> "Could not convert " + SettingsServiceBean.Key.HarvestingClientCallRateLimit + " to float: " + nfe.getMessage());
+                    logger.warning("Disabling all harvesting client delay intervals completely until fixed!");
+                    return Map.of(DEFAULT_KEY, 0F);
+                }
+            }
+        }
+        // Default is not to limit at all
+        return Map.of(DEFAULT_KEY, 0F);
+    }
+
+    public float getHarvestingClientRequestInterval(String clientName) {
+        if (clientName != null && !clientName.isBlank()) {
+            // We convert to lowercase so it doesn't matter which variant someone uses in the JSON config
+            String convertedClientName = clientName.toLowerCase();
+            return getHarvestingClientRequestIntervals().getOrDefault(convertedClientName, getHarvestingClientRequestIntervals().get(DEFAULT_KEY));
+        }
+        return getHarvestingClientRequestIntervals().get(DEFAULT_KEY);
+    }
+    
     public boolean isOAIServerEnabled() {
         boolean defaultResponse = false;
         return settingsService.isTrueForKey(SettingsServiceBean.Key.OAIServerEnabled, defaultResponse);
@@ -646,7 +707,7 @@ public class SystemConfig {
         }
         return false;
     }
-
+    
     public String getFooterCopyrightAndYear() {
         return BundleUtil.getStringFromBundle("footer.copyright", Arrays.asList(Year.now().getValue() + ""));
     }
@@ -853,12 +914,26 @@ public class SystemConfig {
          * DCM stands for Data Capture Module. Right now it supports upload over
          * rsync+ssh but DCM may support additional methods in the future.
          */
+        @Deprecated(forRemoval = true, since = "2024-07-07")
         RSYNC("dcm/rsync+ssh"),
         /**
          * Traditional Dataverse file handling, which tends to involve users
          * uploading and downloading files using a browser or APIs.
          */
-        NATIVE("native/http");
+        NATIVE("native/http"),
+
+        /**
+         * Upload through Globus of large files
+         */
+
+        GLOBUS("globus"), 
+        
+        /**
+         * Upload folders of files through dvwebloader app
+         */
+
+        WEBLOADER("dvwebloader");
+        ;
 
 
         private final String text;
@@ -897,8 +972,11 @@ public class SystemConfig {
          * RSAL stands for Repository Storage Abstraction Layer. Downloads don't
          * go through Glassfish.
          */
+        @Deprecated(forRemoval = true, since = "2024-07-07")
         RSYNC("rsal/rsync"),
-        NATIVE("native/http");
+        NATIVE("native/http"),
+        GLOBUS("globus")
+        ;
         private final String text;
 
         private FileDownloadMethods(final String text) {
@@ -948,6 +1026,7 @@ public class SystemConfig {
      */
     public enum TransferProtocols {
 
+        @Deprecated(forRemoval = true, since = "2024-07-07")
         RSYNC("rsync"),
         /**
          * POSIX includes NFS. This is related to Key.LocalDataAccessPath in
@@ -979,22 +1058,32 @@ public class SystemConfig {
         }
 
     }
-
+    
     public boolean isPublicInstall(){
         boolean saneDefault = false;
         return settingsService.isTrueForKey(SettingsServiceBean.Key.PublicInstall, saneDefault);
     }
-    
+
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     public boolean isRsyncUpload(){
-        return getUploadMethodAvailable(SystemConfig.FileUploadMethods.RSYNC.toString());
+        return getMethodAvailable(SystemConfig.FileUploadMethods.RSYNC.toString(), true);
+    }
+
+    public boolean isGlobusUpload(){
+        return getMethodAvailable(FileUploadMethods.GLOBUS.toString(), true);
     }
     
+    public boolean isWebloaderUpload(){
+        return getMethodAvailable(FileUploadMethods.WEBLOADER.toString(), true);
+    }
+
     // Controls if HTTP upload is enabled for both GUI and API.
     public boolean isHTTPUpload(){       
-        return getUploadMethodAvailable(SystemConfig.FileUploadMethods.NATIVE.toString());       
+        return getMethodAvailable(SystemConfig.FileUploadMethods.NATIVE.toString(), true);
     }
-    
-    public boolean isRsyncOnly(){       
+
+    @Deprecated(forRemoval = true, since = "2024-07-07")
+    public boolean isRsyncOnly(){
         String downloadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.DownloadMethods);
         if(downloadMethods == null){
             return false;
@@ -1003,59 +1092,51 @@ public class SystemConfig {
             return false;
         }
         String uploadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.UploadMethods);
-        if (uploadMethods==null){
+        if (uploadMethods == null) {
             return false;
-        } else {
-           return  Arrays.asList(uploadMethods.toLowerCase().split("\\s*,\\s*")).size() == 1 && uploadMethods.toLowerCase().equals(SystemConfig.FileUploadMethods.RSYNC.toString());
-        }        
-    }
-    
-    public boolean isRsyncDownload() {
-        String downloadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.DownloadMethods);
-        return downloadMethods !=null && downloadMethods.toLowerCase().contains(SystemConfig.FileDownloadMethods.RSYNC.toString());
-    }
-    
-    public boolean isHTTPDownload() {
-        String downloadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.DownloadMethods);
-        logger.warning("Download Methods:" + downloadMethods);
-        return downloadMethods !=null && downloadMethods.toLowerCase().contains(SystemConfig.FileDownloadMethods.NATIVE.toString());
-    }
-    
-    private Boolean getUploadMethodAvailable(String method){
-        String uploadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.UploadMethods); 
-        if (uploadMethods==null){
-            return false;
-        } else {
-           return  Arrays.asList(uploadMethods.toLowerCase().split("\\s*,\\s*")).contains(method);
         }
+        String normalizedUploadMethods = uploadMethods.toLowerCase();
+        return ListSplitUtil.split(normalizedUploadMethods).size() == 1
+                && normalizedUploadMethods.equals(SystemConfig.FileUploadMethods.RSYNC.toString());
+    }
+
+    @Deprecated(forRemoval = true, since = "2024-07-07")
+    public boolean isRsyncDownload() {
+        return getMethodAvailable(SystemConfig.FileUploadMethods.RSYNC.toString(), false);
+    }
+
+    public boolean isHTTPDownload() {
+        return getMethodAvailable(SystemConfig.FileUploadMethods.NATIVE.toString(), false);
+    }
+
+    public boolean isGlobusDownload() {
+        return getMethodAvailable(FileDownloadMethods.GLOBUS.toString(), false);
+    }
+    
+    public boolean isGlobusFileDownload() {
+        return (isGlobusDownload() && settingsService.isTrueForKey(SettingsServiceBean.Key.GlobusSingleFileTransfer, false));
+    }
+
+    public int getGlobusBatchLookupSize() {
+        String batchSizeOption = settingsService.getValueForKey(SettingsServiceBean.Key.GlobusBatchLookupSize);
+        return getIntLimitFromStringOrDefault(batchSizeOption, defaultGlobusBatchLookupSize);
+    }
+    
+    private Boolean getMethodAvailable(String method, boolean upload) {
+        String methods = settingsService.getValueForKey(
+                upload ? SettingsServiceBean.Key.UploadMethods : SettingsServiceBean.Key.DownloadMethods);
+        if (methods == null) {
+            return false;
+        }
+        return ListSplitUtil.split(methods.toLowerCase()).contains(method);
     }
     
     public Integer getUploadMethodCount(){
         String uploadMethods = settingsService.getValueForKey(SettingsServiceBean.Key.UploadMethods); 
-        if (uploadMethods==null){
+        if (uploadMethods == null) {
             return 0;
-        } else {
-           return  Arrays.asList(uploadMethods.toLowerCase().split("\\s*,\\s*")).size();
-        }       
-    }
-    public boolean isDataFilePIDSequentialDependent(){
-        String doiIdentifierType = settingsService.getValueForKey(SettingsServiceBean.Key.IdentifierGenerationStyle, "randomString");
-        String doiDataFileFormat = settingsService.getValueForKey(SettingsServiceBean.Key.DataFilePIDFormat, "DEPENDENT");
-        if (doiIdentifierType.equals("storedProcGenerated") && doiDataFileFormat.equals("DEPENDENT")){
-            return true;
         }
-        return false;
-    }
-    
-    public int getPIDAsynchRegFileCount() {
-        String fileCount = settingsService.getValueForKey(SettingsServiceBean.Key.PIDAsynchRegFileCount, "10");
-        int retVal = 10;
-        try {
-            retVal = Integer.parseInt(fileCount);
-        } catch (NumberFormatException e) {           
-            //if no number in the setting we'll return 10
-        }
-        return retVal;
+        return ListSplitUtil.split(uploadMethods.toLowerCase()).size();
     }
 
     public boolean isAllowCustomTerms() {
@@ -1063,20 +1144,29 @@ public class SystemConfig {
         return settingsService.isTrueForKey(SettingsServiceBean.Key.AllowCustomTermsOfUse, safeDefaultIfKeyNotFound);
     }
 
-    public boolean isFilePIDsEnabled() {
-        boolean safeDefaultIfKeyNotFound = true;
-        return settingsService.isTrueForKey(SettingsServiceBean.Key.FilePIDsEnabled, safeDefaultIfKeyNotFound);
-    }
-    
-    public boolean isIndependentHandleService() {
-        boolean safeDefaultIfKeyNotFound = false;
-        return settingsService.isTrueForKey(SettingsServiceBean.Key.IndependentHandleService, safeDefaultIfKeyNotFound);
-    
-    }
-    
-    public String getHandleAuthHandle() {
-        String handleAuthHandle = settingsService.getValueForKey(SettingsServiceBean.Key.HandleAuthHandle, null);
-        return handleAuthHandle;
+    public boolean isFilePIDsEnabledForCollection(Dataverse collection) {
+        if (collection == null) {
+            return false;
+        }
+        
+        Dataverse thisCollection = collection; 
+        
+        // If neither enabled nor disabled specifically for this collection,
+        // the parent collection setting is inherited (recursively): 
+        while (thisCollection.getFilePIDsEnabled() == null) {
+            if (thisCollection.getOwner() == null) {
+                // We've reached the root collection, and file PIDs registration
+                // hasn't been explicitly enabled, therefore we presume that it is
+                // subject to how the registration is configured for the 
+                // entire instance:
+                return settingsService.isTrueForKey(SettingsServiceBean.Key.FilePIDsEnabled, false); 
+            }
+            thisCollection = thisCollection.getOwner();
+        }
+        
+        // If present, the setting of the first direct ancestor collection 
+        // takes precedent:
+        return thisCollection.getFilePIDsEnabled();
     }
 
     public String getMDCLogPath() {
@@ -1091,11 +1181,6 @@ public class SystemConfig {
 
 	public boolean directUploadEnabled(DvObjectContainer container) {
     	return Boolean.getBoolean("dataverse.files." + container.getEffectiveStorageDriverId() + ".upload-redirect");
-	}
-	
-	public String getDataCiteRestApiUrlString() {
-		//As of 5.0 the 'doi.dataciterestapiurlstring' is the documented jvm option. Prior versions used 'doi.mdcbaseurlstring' or were hardcoded to api.datacite.org, so the defaults are for backward compatibility.
-        return System.getProperty("doi.dataciterestapiurlstring", System.getProperty("doi.mdcbaseurlstring", "https://api.datacite.org"));
 	}
         
     public boolean isExternalDataverseValidationEnabled() {
@@ -1142,7 +1227,7 @@ public class SystemConfig {
 
         if (limitEntry != null) {
             try {
-                Long sizeOption = new Long(limitEntry);
+                Long sizeOption = Long.valueOf(limitEntry);
                 return sizeOption;
             } catch (NumberFormatException nfe) {
                 logger.warning("Invalid value for DatasetValidationSizeLimit option? - " + limitEntry);
@@ -1157,7 +1242,7 @@ public class SystemConfig {
 
         if (limitEntry != null) {
             try {
-                Long sizeOption = new Long(limitEntry);
+                Long sizeOption = Long.valueOf(limitEntry);
                 return sizeOption;
             } catch (NumberFormatException nfe) {
                 logger.warning("Invalid value for FileValidationSizeLimit option? - " + limitEntry);
@@ -1171,11 +1256,8 @@ public class SystemConfig {
         String setting = settingsService.getValueForKey(SettingsServiceBean.Key.AllowedCurationLabels, "");
         if (!setting.isEmpty()) {
             try {
-                JsonReader jsonReader = Json.createReader(new StringReader(setting));
-
                 Pattern pattern = Pattern.compile("(^[\\w ]+$)"); // alphanumeric, underscore and whitespace allowed
-
-                JsonObject labelSets = jsonReader.readObject();
+                JsonObject labelSets = JsonUtil.getJsonObject(setting);
                 for (String key : labelSets.keySet()) {
                     JsonArray labels = (JsonArray) labelSets.getJsonArray(key);
                     String[] labelArray = new String[labels.size()];
@@ -1205,5 +1287,52 @@ public class SystemConfig {
             }
         }
         return labelMap;
+    }
+    
+    public boolean isSignupDisabledForRemoteAuthProvider(String providerId) {
+        Boolean ret =  settingsService.getValueForCompoundKeyAsBoolean(SettingsServiceBean.Key.AllowRemoteAuthSignUp, providerId);
+        
+        // we default to false - i.e., "not disabled" if the setting is not present: 
+        if (ret == null) {
+            return false; 
+        }
+        
+        return !ret; 
+    }
+    
+    public boolean isStorageQuotasEnforced() {
+        return settingsService.isTrueForKey(SettingsServiceBean.Key.UseStorageQuotas, false);
+    }
+    
+    /**
+     * This method should only be used for testing of the new storage quota 
+     * mechanism, temporarily. (it uses the same value as the quota for 
+     * *everybody* regardless of the circumstances, defined as a database 
+     * setting)
+     */
+    public Long getTestStorageQuotaLimit() {
+        return settingsService.getValueForKeyAsLong(SettingsServiceBean.Key.StorageQuotaSizeInBytes);
+    }
+    /**
+     * Should we store tab-delimited files produced during ingest *with* the
+     * variable name header line included?
+     * @return boolean - defaults to false.
+     */
+    public boolean isStoringIngestedFilesWithHeaders() {
+        return settingsService.isTrueForKey(SettingsServiceBean.Key.StoreIngestedTabularFilesWithVarHeaders, false);
+    }
+
+    /**
+     * RateLimitUtil will parse the json to create a List<RateLimitSetting>
+     */
+    public String getRateLimitsJson() {
+        return settingsService.getValueForKey(SettingsServiceBean.Key.RateLimitingCapacityByTierAndAction, "");
+    }
+    public String getRateLimitingDefaultCapacityTiers() {
+        return settingsService.getValueForKey(SettingsServiceBean.Key.RateLimitingDefaultCapacityTiers, "");
+    }
+
+    public long getContactFeedbackMessageSizeLimit() {
+        return settingsService.getValueForKeyAsLong(SettingsServiceBean.Key.ContactFeedbackMessageSizeLimit, 0L);
     }
 }

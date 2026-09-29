@@ -8,18 +8,21 @@ package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.UserNotification.Type;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean.Key;
+
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.ejb.TransactionAttribute;
-import javax.ejb.TransactionAttributeType;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
-import javax.persistence.TypedQuery;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.ejb.TransactionAttribute;
+import jakarta.ejb.TransactionAttributeType;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+import jakarta.persistence.TypedQuery;
 
 /**
  *
@@ -35,13 +38,68 @@ public class UserNotificationServiceBean {
     MailServiceBean mailService;
     @PersistenceContext(unitName = "VDCNet-ejbPU")
     private EntityManager em;
+
+    @EJB
+    SettingsServiceBean settingsService;
     
     public List<UserNotification> findByUser(Long userId) {
-        TypedQuery<UserNotification> query = em.createQuery("select un from UserNotification un where un.user.id =:userId order by un.sendDate desc", UserNotification.class);
+        return findByUser(userId, false, null, null);
+    }
+
+    /**
+     * Finds notifications for a user, with options for pagination and filtering by read status.
+     *
+     * @param userId The ID of the user.
+     * @param onlyUnread If true, returns only unread notifications. If false, returns all.
+     * @param limit The maximum number of notifications to return (for pagination). Can be null.
+     * @param offset The starting position for the results (for pagination). Can be null.
+     * @return A list of UserNotification objects, ordered by send date descending.
+     */
+    public List<UserNotification> findByUser(Long userId, boolean onlyUnread, Integer limit, Integer offset) {
+        TypedQuery<UserNotification> query = em.createQuery(
+                "select un from UserNotification un " +
+                        "where un.user.id = :userId and (:onlyUnread = false or un.readNotification = false) " +
+                        "order by un.sendDate desc",
+                UserNotification.class
+        );
+
         query.setParameter("userId", userId);
+        query.setParameter("onlyUnread", onlyUnread);
+
+        if (offset != null) {
+            query.setFirstResult(offset);
+        }
+        if (limit != null) {
+            query.setMaxResults(limit);
+        }
+
         return query.getResultList();
     }
-    
+
+    /**
+     * Finds the total count of notifications for a user, with an option to count only unread notifications.
+     *
+     * @param userId The ID of the user.
+     * @param onlyUnread If true, counts only unread notifications. If false, counts all notifications.
+     * @return The total count as a Long.
+     */
+    public Long findTotalCountByUser(Long userId, boolean onlyUnread) {
+        if (userId == null) {
+            return 0L;
+        }
+
+        TypedQuery<Long> query = em.createQuery(
+                "select count(un) from UserNotification un " +
+                        "where un.user.id = :userId and (:onlyUnread = false or un.readNotification = false)",
+                Long.class
+        );
+
+        query.setParameter("userId", userId);
+        query.setParameter("onlyUnread", onlyUnread);
+
+        return query.getSingleResult();
+    }
+
     public List<UserNotification> findByRequestor(Long userId) {
         TypedQuery<UserNotification> query = em.createQuery("select un from UserNotification un where un.requestor.id =:userId order by un.sendDate desc", UserNotification.class);
         query.setParameter("userId", userId);
@@ -80,7 +138,12 @@ public class UserNotificationServiceBean {
     public UserNotification save(UserNotification userNotification) {
         return em.merge(userNotification);
     }
-    
+
+    public UserNotification markAsRead(UserNotification userNotification) {
+        userNotification.setReadNotification(true);
+        return em.merge(userNotification);
+    }
+
     public void delete(UserNotification userNotification) {
         em.remove(em.merge(userNotification));
     }
@@ -103,19 +166,48 @@ public class UserNotificationServiceBean {
     }
 
     public void sendNotification(AuthenticatedUser dataverseUser, Timestamp sendDate, Type type, Long objectId, String comment, AuthenticatedUser requestor, boolean isHtmlContent) {
+        sendNotification(dataverseUser, sendDate, type, objectId, comment, requestor, isHtmlContent, null);
+    }
+    public void sendNotification(AuthenticatedUser dataverseUser, Timestamp sendDate, Type type, Long objectId, String comment, AuthenticatedUser requestor, boolean isHtmlContent, String additionalInfo) {
         UserNotification userNotification = new UserNotification();
         userNotification.setUser(dataverseUser);
         userNotification.setSendDate(sendDate);
         userNotification.setType(type);
         userNotification.setObjectId(objectId);
         userNotification.setRequestor(requestor);
+        userNotification.setAdditionalInfo(additionalInfo);
 
-        if (mailService.sendNotificationEmail(userNotification, comment, requestor, isHtmlContent)) {
+        if (!isEmailMuted(userNotification) && mailService.sendNotificationEmail(userNotification, comment, requestor, isHtmlContent)) {
             logger.fine("email was sent");
             userNotification.setEmailed(true);
         } else {
             logger.fine("email was not sent");
         }
-        save(userNotification);
+        if (!isNotificationMuted(userNotification)) {
+            save(userNotification);
+        }
+    }
+    
+
+    public boolean isEmailMuted(UserNotification userNotification) {
+        final Type type = userNotification.getType();
+        final AuthenticatedUser user = userNotification.getUser();
+        final boolean alwaysMuted = settingsService.containsCommaSeparatedValueForKey(Key.AlwaysMuted, type.name());
+        final boolean neverMuted = settingsService.containsCommaSeparatedValueForKey(Key.NeverMuted, type.name());
+        if (alwaysMuted && neverMuted) {
+            logger.warning("Both; AlwaysMuted and NeverMuted are set for " + type.name() + ", email is muted");
+        }
+        return alwaysMuted || (!neverMuted && user.hasEmailMuted(type));
+    }
+    
+    public boolean isNotificationMuted(UserNotification userNotification) {
+        final Type type = userNotification.getType();
+        final AuthenticatedUser user = userNotification.getUser();
+        final boolean alwaysMuted = settingsService.containsCommaSeparatedValueForKey(Key.AlwaysMuted, type.name());
+        final boolean neverMuted = settingsService.containsCommaSeparatedValueForKey(Key.NeverMuted, type.name());
+        if (alwaysMuted && neverMuted) {
+            logger.warning("Both; AlwaysMuted and NeverMuted are set for " + type.name() + ", notification is muted");
+        }
+        return alwaysMuted || (!neverMuted && user.hasNotificationMuted(type));
     }
 }

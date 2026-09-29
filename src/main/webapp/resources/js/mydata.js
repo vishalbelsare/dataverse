@@ -27,6 +27,7 @@ function bind_checkbox_labels(){
     bind_checkbox_labels_by_names('mydata_dvobject_label', 'div_dvobject_types');
     bind_checkbox_labels_by_names('mydata_pubstate_label', 'div_published_states');
     bind_checkbox_labels_by_names('mydata_role_label', 'div_role_states');
+    bind_checkbox_labels_by_names('mydata_validity_label', 'div_dataset_valid');
 
 }
 
@@ -390,7 +391,7 @@ function submit_my_data_search(){
     // --------------------------------
     // ah, but with the horribly coded xhtml page, we can't use form tags...
     //var formData = $('#mydata_filter_form').serialize();
-    var formData = $("#my_data_filter_column :input").serialize() + '&' + $("#my_data_filter_column2 :input").serialize() ;
+    var formData = $("#my_data_filter_column :input").serialize() + '&' + $("#my_data_filter_column3 :input").serialize()+ '&' + $("#my_data_filter_column2 :input").serialize() ;
 
     // For debugging, show the search params
     if (MYDATA_DEBUG_ON){
@@ -420,6 +421,11 @@ function submit_my_data_search(){
 
         if (!data.success){
             setWarningAlert(data.error_message);
+            $('#ajaxStatusPanel_start').hide();
+            return;
+        }
+        if (data.message != null){
+            setWarningAlert(data.message);
             $('#ajaxStatusPanel_start').hide();
             return;
         }
@@ -491,6 +497,12 @@ function submit_my_data_search(){
                 var y = $("span.label.deaccessioned");
                 for (var i = 0; i < y.length; i++) {
                     y[i].innerHTML = deaccessioned;
+                }
+            }
+            if ($("span.label.incomplete")) {
+                var y = $("span.label.incomplete");
+                for (var i = 0; i < y.length; i++) {
+                    y[i].innerHTML = incomplete;
                 }
             }
 

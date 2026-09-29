@@ -1,56 +1,57 @@
 package edu.harvard.iq.dataverse.metrics;
 
 import edu.harvard.iq.dataverse.Dataverse;
-import java.io.StringReader;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
-import javax.ws.rs.BadRequestException;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonException;
+import jakarta.ws.rs.BadRequestException;
 
 public class MetricsUtil {
 
     private static final Logger logger = Logger.getLogger(MetricsUtil.class.getCanonicalName());
 
-    public final static String CONTENTTYPE = "contenttype";
-    public final static String COUNT = "count";
-    public final static String CATEGORY = "category";
-    public final static String ID = "id";
-    public final static String PID = "pid";
-    public final static String SUBJECT = "subject";
-    public final static String DATE = "date";
-    public final static String SIZE = "size";
+    public static final String CONTENTTYPE = "contenttype";
+    public static final String COUNT = "count";
+    public static final String CATEGORY = "category";
+    public static final String ID = "id";
+    public static final String PID = "pid";
+    public static final String SUBJECT = "subject";
+    public static final String DATE = "date";
+    public static final String SIZE = "size";
 
-    public static String YEAR_AND_MONTH_PATTERN = "yyyy-MM";
+    public static final String YEAR_AND_MONTH_PATTERN = "yyyy-MM";
 
     public static final String DATA_LOCATION_LOCAL = "local";
     public static final String DATA_LOCATION_REMOTE = "remote";
     public static final String DATA_LOCATION_ALL = "all";
 
+    private MetricsUtil() {}
+
     public static JsonObjectBuilder countToJson(long count) {
-        JsonObjectBuilder job = Json.createObjectBuilder();
+        JsonObjectBuilder job = JsonUtil.createObjectBuilder();
         job.add(COUNT, count);
         return job;
     }
 
     public static JsonArrayBuilder dataversesByCategoryToJson(List<Object[]> listOfObjectArrays) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
         for (Object[] arrayOfObjects : listOfObjectArrays) {
-            JsonObjectBuilder job = Json.createObjectBuilder();
+            JsonObjectBuilder job = JsonUtil.createObjectBuilder();
             String categoryNameUppercase = (String) arrayOfObjects[0];
             Dataverse dataverse = new Dataverse();
             dataverse.setDataverseType(Dataverse.DataverseType.valueOf(categoryNameUppercase));
@@ -64,9 +65,9 @@ public class MetricsUtil {
     }
 
     public static JsonArrayBuilder dataversesBySubjectToJson(List<Object[]> listOfObjectArrays) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
         for (Object[] objectArray : listOfObjectArrays) {
-            JsonObjectBuilder job = Json.createObjectBuilder();
+            JsonObjectBuilder job = JsonUtil.createObjectBuilder();
             String subject = (String) objectArray[0];
             long count = (long) objectArray[1];
             job.add(SUBJECT, subject);
@@ -77,9 +78,9 @@ public class MetricsUtil {
     }
 
     public static JsonArrayBuilder datasetsBySubjectToJson(List<Object[]> listOfObjectArrays) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
         for (Object[] objectArray : listOfObjectArrays) {
-            JsonObjectBuilder job = Json.createObjectBuilder();
+            JsonObjectBuilder job = JsonUtil.createObjectBuilder();
             String subject = (String) objectArray[0];
             long count = (long) objectArray[1];
             job.add(SUBJECT, subject);
@@ -94,7 +95,7 @@ public class MetricsUtil {
     }
     
     public static JsonArray timeSeriesToJson(List<Object[]> results, boolean isBigDecimal) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
         long total = 0;
         String curDate = (String) results.get(0)[0];
         // Get a list of all the monthly dates from the start until now
@@ -102,7 +103,7 @@ public class MetricsUtil {
         int i = 0;
         // Create an entry for each date
         for (String date : dates) {
-            JsonObjectBuilder job = Json.createObjectBuilder();
+            JsonObjectBuilder job = JsonUtil.createObjectBuilder();
             
             // If there's a result for this date, add it's count to the total
             // and find the date of the next entry
@@ -135,9 +136,9 @@ public class MetricsUtil {
     }
     
     public static JsonArray timeSeriesByTypeToJson(List<Object[]> results) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
-        Map<String, Long> totals = new HashMap<String, Long>();
-        Map<String, Long> sizes =  new HashMap<String, Long>();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
+        Map<String, Long> totals = new HashMap<>();
+        Map<String, Long> sizes =  new HashMap<>();
         String curDate = (String) results.get(0)[0];
         // Get a list of all the monthly dates from the start until now
         List<String> dates = getDatesFrom(curDate);
@@ -158,7 +159,7 @@ public class MetricsUtil {
             }
             // Then add the aggregate count and size for all types
             for(String type: totals.keySet()) {
-                JsonObjectBuilder job = Json.createObjectBuilder();
+                JsonObjectBuilder job = JsonUtil.createObjectBuilder();
                 job.add(MetricsUtil.DATE, date);
                 job.add(CONTENTTYPE, type);
                 job.add(COUNT, totals.get(type));
@@ -170,8 +171,8 @@ public class MetricsUtil {
     }
     
     public static JsonArray timeSeriesByPIDToJson(List<Object[]> results) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
-        Map<String, Long> totals = new HashMap<String, Long>();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
+        Map<String, Long> totals = new HashMap<>();
         String curDate = (String) results.get(0)[0];
         // Get a list of all the monthly dates from the start until now
         List<String> dates = getDatesFrom(curDate);
@@ -190,7 +191,7 @@ public class MetricsUtil {
             }
             // Then add the aggregate count and size for all types
             for(String type: totals.keySet()) {
-                JsonObjectBuilder job = Json.createObjectBuilder();
+                JsonObjectBuilder job = JsonUtil.createObjectBuilder();
                 job.add(MetricsUtil.DATE, date);
                 job.add(PID, type);
                 job.add(COUNT, totals.get(type));
@@ -201,9 +202,9 @@ public class MetricsUtil {
     }
     
     public static JsonArray timeSeriesByIDAndPIDToJson(List<Object[]> results) {
-        JsonArrayBuilder jab = Json.createArrayBuilder();
-        Map<Integer, Long> totals = new HashMap<Integer, Long>();
-        Map<Integer, String> pids = new HashMap<Integer, String>();
+        JsonArrayBuilder jab = JsonUtil.createArrayBuilder();
+        Map<Integer, Long> totals = new HashMap<>();
+        Map<Integer, String> pids = new HashMap<>();
         String curDate = (String) results.get(0)[0];
         // Get a list of all the monthly dates from the start until now
         List<String> dates = getDatesFrom(curDate);
@@ -224,10 +225,12 @@ public class MetricsUtil {
             }
             // Then add the aggregate count and size for all types
             for(Integer id: totals.keySet()) {
-                JsonObjectBuilder job = Json.createObjectBuilder();
+                JsonObjectBuilder job = JsonUtil.createObjectBuilder();
                 job.add(MetricsUtil.DATE, date);
                 job.add(ID, id);
-                job.add(PID, pids.get(id));
+                if(pids.get(id)!=null) {
+                    job.add(PID, pids.get(id));
+                }
                 job.add(COUNT, totals.get(id));
                 jab.add(job);
             }
@@ -238,11 +241,11 @@ public class MetricsUtil {
 
     /**
      *
-     * @param userInput A year and month in YYYY-MM format.
-     * @return A year and month in YYYY-M     
      * Note that along with sanitization, this checks that the requested month is
      * not after the current one. This will need to be made more robust if we
-     * start writing metrics for farther in the future (e.g. the current year) the current year)
+     * start writing metrics for farther in the future (e.g. the current year)
+     * @param userInput A year and month in YYYY-MM format.
+     * @return A year and month in YYYY-M     
      */
     public static String sanitizeYearMonthUserInput(String userInput) throws BadRequestException {
         logger.fine("string from user to sanitize (hopefully YYYY-MM format): " + userInput);
@@ -260,8 +263,7 @@ public class MetricsUtil {
             throw new BadRequestException("The requested date is set past the current month.");
         }
 
-        String sanitized = inputLocalDate.format(dateTimeFormatter);
-        return sanitized;
+        return inputLocalDate.format(dateTimeFormatter);
     }
 
     public static String validateDataLocationStringType(String dataLocation) throws BadRequestException {
@@ -279,30 +281,38 @@ public class MetricsUtil {
         return LocalDate.now().format(DateTimeFormatter.ofPattern(MetricsUtil.YEAR_AND_MONTH_PATTERN));
     }
 
+    /**
+     * Parse a String into a JSON object
+     * @param str serialized JSON
+     * @return {@code null} if {@code str} is {@code null}, or the parsed JSON object
+     * @throws JsonException
+     * @see JsonUtil#getJsonObject(String)
+     */
     public static JsonObject stringToJsonObject(String str) {
         if (str == null) {
             return null;
         }
-        JsonReader jsonReader = Json.createReader(new StringReader(str));
-        JsonObject jo = jsonReader.readObject();
-        jsonReader.close();
 
-        return jo;
+        return JsonUtil.getJsonObject(str);
     }
 
+    /**
+     * Parse a String into a JSON array
+     * @param str serialized JSON
+     * @return {@code null} if {@code str} is {@code null}, or the parsed JSON array
+     * @throws JsonException
+     * @see JsonUtil#getJsonArray(String)
+     */
     public static JsonArray stringToJsonArray(String str) {
         if (str == null) {
             return null;
         }
-        JsonReader jsonReader = Json.createReader(new StringReader(str));
-        JsonArray ja = jsonReader.readArray();
-        jsonReader.close();
 
-        return ja;
+        return JsonUtil.getJsonArray(str);
     }
 
     public static List<String> getDatesFrom(String startMonth) {
-        List<String> dates = new ArrayList<String>();
+        List<String> dates = new ArrayList<>();
         LocalDate next = LocalDate.parse(startMonth+ "-01").plusMonths(1);
         dates.add(startMonth);
         DateTimeFormatter monthFormat = DateTimeFormatter.ofPattern(YEAR_AND_MONTH_PATTERN);

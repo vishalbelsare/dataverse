@@ -9,11 +9,37 @@
     xmlns:pt="http://java.sun.com/jsf/passthrough"
     xmlns:cc="http://java.sun.com/jsf/composite"
     xmlns:o="http://omnifaces.org/ui"
+    xmlns:fn="http://java.sun.com/jsp/jstl/functions"
     xmlns:iqbs="http://xmlns.jcp.org/jsf/composite/iqbs">
 
-    <script src="#{resource['js/fileupload.js']}?version=#{systemConfig.getVersion()}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/components/core.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/components/md5.js"></script>
+
+    <!-- Create variables for frequently accessed values -->
+    <ui:param name="useDirectUpload" value="#{systemConfig.directUploadEnabled(dataset)}"/>
+    <ui:param name="checksumAlgName" value="#{systemConfig.getFileFixityChecksumAlgorithm().toString()}"/>
+    <ui:param name="hasPackageFile" value="#{EditDatafilesPage.workingVersion.hasPackageFile}"/>
+    <ui:param name="hasNonPackageFile" value="#{EditDatafilesPage.workingVersion.hasNonPackageFile}"/>
+    <ui:param name="isDatasetReleased" value="#{EditDatafilesPage.dataset.released}"/>
+    <ui:param name="hasRsyncScript" value="#{EditDatafilesPage.isHasRsyncScript()}"/>
+    <ui:param name="fileMetadatas" value="#{EditDatafilesPage.fileMetadatas}"/>
+    <ui:param name="hasFileMetadatas" value="#{!empty fileMetadatas}"/>
+    <ui:param name="showFileUploadComponent" value="#{datasetPage || EditDatafilesPage.showFileUploadComponent()}"/>
+    <ui:param name="showFileUploadFragment" value="#{datasetPage || EditDatafilesPage.showFileUploadFragment()}"/>
+    <ui:param name="isQuotaExceeded" value="#{EditDatafilesPage.isQuotaExceeded()}"/>
+    <ui:param name="isFileUploadCountExceeded" value="#{EditDatafilesPage.isFileUploadCountExceeded()}"/>
+    <ui:param name="maxFileUploadSize" value="#{EditDatafilesPage.getMaxFileUploadSizeInBytes()}"/>
+    <ui:param name="maxNumberOfFiles" value="#{EditDatafilesPage.getMaxNumberOfFiles()}"/>
+    <ui:param name="fileUploadsAvailable" value="#{EditDatafilesPage.getFileUploadsAvailable()}"/>
+    
+    <h:outputScript name='js/fileupload.js?version=#{systemConfig.getVersion()}' />
+    <ui:fragment rendered = '#{useDirectUpload}'>
+    <h:outputScript name='js/crypto-js/4.0.0/core.js'  />
+    <h:outputScript name='js/crypto-js/4.0.0/x64-core.js' rendered='#{(checksumAlgName eq "SHA-512")}'/>
+    <h:outputScript name='js/crypto-js/4.0.0/md5.js' rendered='#{true or checksumAlgName eq "MD5"}'/>
+    <h:outputScript name='js/crypto-js/4.0.0/sha1.js'  rendered='#{checksumAlgName eq "SHA-1"}'/>
+    <h:outputScript name='js/crypto-js/4.0.0/sha256.js'  rendered='#{checksumAlgName eq "SHA-256"}'/>
+    <h:outputScript name='js/crypto-js/4.0.0/sha512.js' rendered='#{checksumAlgName eq "SHA-512"}'/>
+    </ui:fragment>
+
     <!-- Static Tab Layout -->
     <div data-widget="content" class="ui-tabs ui-widget ui-widget-content ui-corner-all ui-hidden-container ui-tabs-top" id="datasetForm:tabView">
         <ul role="tablist" class="ui-tabs-nav ui-helper-reset ui-helper-clearfix ui-widget-header ui-corner-all">
@@ -38,14 +64,14 @@
                 </ui:fragment>
                 <!-- Upload -->
                 <div class="panel-group" role="tablist" aria-multiselectable="true"
-                      id="fileUploadFragment" jsf:rendered="#{datasetPage || EditDatafilesPage.showFileUploadFragment()}">
+                      id="fileUploadFragment" jsf:rendered="#{showFileUploadFragment}">
                     
                     <div jsf:id="httpPanel" jsf:rendered="#{settingsWrapper.HTTPUpload}" class="panel panel-default">
                         <div role="tab" id="headingHTTP" data-toggle="collapse" data-target="#panelCollapseHTTP" class="panel-heading text-info" aria-expanded="true" aria-controls="panelCollapseHTTP">
                             #{bundle['file.fromHTTP']} &#160;<span class="glyphicon glyphicon-chevron-up"/>
                         </div>
                         <div id="panelCollapseHTTP" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="headingHTTP">
-                            <div class="panel-body" jsf:id="httpUploadDisabledDueToExistingRsyncPackage" jsf:rendered="#{EditDatafilesPage.workingVersion.hasPackageFile and !EditDatafilesPage.dataset.released}">
+                            <div class="panel-body" jsf:id="httpUploadDisabledDueToExistingRsyncPackage" jsf:rendered="#{hasPackageFile and !isDatasetReleased}">
                                 <p class="help-block">
                                     <span class="glyphicon glyphicon-warning-sign text-warning"></span>
                                     <h:outputFormat class="text-warning" value=" #{bundle['file.rsyncUpload.httpUploadDisabledDueToRsyncFileExisting']}" escape="false">
@@ -60,25 +86,37 @@
                                     </h:outputFormat>
                                 </p>
                             </div>
-                            <div class="panel-body" jsf:id="httpUploadDisabledDueToExistingRsyncPackagePublished" jsf:rendered="#{EditDatafilesPage.workingVersion.hasPackageFile and EditDatafilesPage.dataset.released}">
+                            <div class="panel-body" jsf:id="httpUploadDisabledDueToExistingRsyncPackagePublished" jsf:rendered="#{hasPackageFile and isDatasetReleased}">
                                 <p class="help-block">
                                     <span class="glyphicon glyphicon-warning-sign text-warning"></span>
                                     <h:outputText class="text-warning" value=" #{bundle['file.rsyncUpload.httpUploadDisabledDueToRsyncFileExistingAndPublished']}"/>
                                 </p>
                             </div>
-                            <div class="panel-body" jsf:id="contentOfHttpPanel" jsf:rendered="#{!EditDatafilesPage.workingVersion.hasPackageFile}">
+                            <div class="panel-body" jsf:id="contentOfHttpPanel" jsf:rendered="#{!hasPackageFile}">
                                 <p class="help-block">
                                     <h:outputFormat value="#{bundle['file.selectToAdd.tipMoreInformation']}" escape="false">
                                         <f:param value="#{systemConfig.guidesBaseUrl}"/>
                                         <f:param value="#{systemConfig.guidesVersion}"/>
                                     </h:outputFormat>
+                                    <h:outputFormat value=" #{bundle['file.selectToAdd.tipTotalSizeUsed']}" escape="false">
+                                        <f:param value="#{EditDatafilesPage.currentContainerStorageUse}"/>
+                                    </h:outputFormat>
                                     <h:outputFormat value=" #{bundle['file.selectToAdd.tipMaxNumFiles']}" escape="false"
                                                     rendered="#{EditDatafilesPage.maxNumberOfFiles > 0}">
                                         <f:param value="#{EditDatafilesPage.maxNumberOfFiles}"/>
                                     </h:outputFormat>
-                                    <h:outputFormat value=" #{bundle['file.selectToAdd.tipLimit']}" escape="false" 
+                                    <h:outputFormat value=" #{bundle['file.selectToAdd.tipMaxNumFilesUploadsAvailable']}" escape="false"
+                                                    rendered="#{EditDatafilesPage.fileUploadsAvailable > -1}">
+                                        <f:param value="#{EditDatafilesPage.fileUploadsAvailable}"/>
+                                    </h:outputFormat>
+                                    <h:outputFormat value=" #{bundle['file.selectToAdd.tipLimit']}" escape="false"
                                                     rendered="#{!EditDatafilesPage.isUnlimitedUploadFileSize()}">
                                         <f:param value="#{EditDatafilesPage.getHumanMaxFileUploadSizeInBytes()}"/>
+                                    </h:outputFormat>
+                                    
+                                    <h:outputFormat value=" #{bundle['file.selectToAdd.tipQuotaRemaining']}" escape="false" 
+                                                    rendered="#{EditDatafilesPage.isStorageQuotaEnforced()}">
+                                        <f:param value="#{EditDatafilesPage.getHumanMaxTotalUploadSizeInBytes()}"/>
                                     </h:outputFormat>
                                     <h:outputFormat value=" #{bundle['file.selectToAdd.tipTabularLimit']}" escape="false"
                                                     rendered="#{EditDatafilesPage.maxIngestSizeInBytes != -1}">
@@ -88,7 +126,7 @@
                                     </h:outputFormat>
                                     <h:outputFormat value=" #{bundle['file.selectToAdd.tipPerFileTabularLimit']}"
                                                     rendered="#{not empty EditDatafilesPage.humanPerFormatTabularLimits}">
-                                        <f:param value="#{EditDatafilesPage.humanPerFormatTabularLimits}"/>
+                                        <f:param value="#{fn:replace(EditDatafilesPage.humanPerFormatTabularLimits, ' 1 B', ' disabled')}"/>
                                     </h:outputFormat>
                                 </p>
                     
@@ -109,7 +147,7 @@
                         
                         $(document).ready(function () {
                             uploadWidgetDropMsg();
-                            setupDirectUpload(#{systemConfig.directUploadEnabled(EditDatafilesPage.dataset)});
+                             #{useDirectUpload ? 'setupDirectUpload(true);':''}
                         });
                         //]]>
                     </script>
@@ -143,29 +181,43 @@
                                   dragDropSupport="true"
                                   auto="#{!(systemConfig.directUploadEnabled(EditDatafilesPage.dataset))}"
                                   multiple="#{datasetPage || EditDatafilesPage.allowMultipleFileUpload()}"
-                                  disabled="#{lockedFromEdits ||  !(datasetPage || EditDatafilesPage.showFileUploadComponent()) }"
+                                  disabled="#{lockedFromEdits ||  !(showFileUploadComponent) || isQuotaExceeded || isFileUploadCountExceeded}"
                                   listener="#{EditDatafilesPage.handleFileUpload}" 
                                   process="filesTable" 
                                   update=":datasetForm:filesTable, @([id$=filesButtons])"
                                   label="#{bundle['file.selectToAddBtn']}"
-                                  oncomplete="javascript:bind_bsui_components();uploadFinished(PF('fileUploadWidget'));"
+                                  oncomplete="uploadFinished(PF('fileUploadWidget'));"
                                   onstart="javascript:uploadWidgetDropRemoveMsg();uploadStarted();"
                                   onerror="javascript:uploadFailure();"
-                                  sizeLimit="#{EditDatafilesPage.getMaxFileUploadSizeInBytes()}"
-                                  fileLimit="#{EditDatafilesPage.getMaxNumberOfFiles()}" 
+                                  sizeLimit="#{maxFileUploadSize}"
+                                  fileLimit="#{maxNumberOfFiles}"
+                                  fileLimitAvailable="#{fileUploadsAvailable}"
                                   invalidSizeMessage="#{bundle['file.edit.error.file_exceeds_limit']}" 
                                   sequential="true"
-                                  widgetVar="fileUploadWidget"/>
-                                
-                                <div jsf:id="dropboxBlock" jsf:rendered="#{settingsWrapper.isHasDropBoxKey() and !lockedFromEdits }"  class="margin-top">
+                                  previewWidth="-1"
+                                  widgetVar="fileUploadWidget">
+                        <f:passThroughAttribute name="aria-label" value="#{bundle['file.uploadFiles']}"/>
+                    </p:fileUpload>
+                              <ui:fragment rendered="#{!lockedFromEdits}">
+                                <div jsf:id="webloaderBlock" jsf:rendered="#{webloaderUploadSupported}"  class="ui-fileupload-buttonbar ui-widget-header ui-corner-top">
+                                    <p class="help-block" jsf:rendered="#{!createDataset}">#{bundle['file.fromWebloader.tip']}</p>
+                                    <p class="help-block" jsf:rendered="#{createDataset}">#{bundle['file.fromWebloaderAfterCreate.tip']}</p>
+                                    <p:button target="_blank" rendered="#{!createDataset}" onclick="cancelDatasetEdit();window.open('#{(datasetPage==true) ? DatasetPage.getWebloaderUrlForDataset(dataset):EditDatafilesPage.getWebloaderUrlForDataset(dataset)}');return false;" value="#{bundle['file.fromWebloader']}"  icon="ui-icon-plusthick" />
+                                </div>
+                                <div jsf:id="dropboxBlock" jsf:rendered="#{settingsWrapper.isHasDropBoxKey()}"  class="margin-top">
                                     <!-- Dropbox upload widget -->
                                     <p class="help-block">#{bundle['file.fromDropbox.tip']}</p>
                                     <h:inputText id="dropBoxSelectionInput" style="display:none" value="#{EditDatafilesPage.dropBoxSelection}"/>
                                     <p:commandButton id="dropBoxButton" actionListener="#{EditDatafilesPage.handleDropBoxUpload}" oncomplete="javascript:dropBoxUploadFinished();" update="@none" style="display:none;" />
-                                    <p:commandButton id="dropBoxUserButton" disabled="#{!(datasetPage || EditDatafilesPage.showFileUploadComponent())}" value="#{bundle['file.fromDropbox']}" onclick="openDropboxChooser();" icon="dropin-btn-status" />
+                                    <p:commandButton id="dropBoxUserButton" disabled="#{!(showFileUploadComponent)}" value="#{bundle['file.fromDropbox']}" onclick="openDropboxChooser();" icon="dropin-btn-status" />
                                     <p:message for="dropBoxButton" id="dropBoxUploadMessage" display="text" redisplay="false" />
                                 </div>
-                    
+                                <div jsf:id="globusBlock" jsf:rendered="#{globusUploadSupported}"  class="margin-top">
+                                    <p class="help-block" jsf:rendered="#{!createDataset}">#{bundle['file.fromGlobus.tip']}</p>
+                                    <p class="help-block" jsf:rendered="#{createDataset}">#{bundle['file.fromGlobusAfterCreate.tip']}</p>
+                                    <p:button target="_blank" rendered="#{!createDataset}" onclick="cancelDatasetEdit();window.open('#{GlobusServiceBean.getGlobusAppUrlForDataset(dataset)}');return false;" value="#{bundle['file.fromGlobus']}"  icon="globus-btn" />
+                                </div>
+                              </ui:fragment>
                             </div>
                         </div>
                     
@@ -180,12 +232,12 @@
                         <div id="panelCollapseRsync" class="panel-collapse collapse #{!settingsWrapper.HTTPUpload ? 'in' : ''}" role="tabpanel" aria-labelledby="headingRsync">
                             <div class="panel-body">
                                 <ui:fragment rendered="#{createDataset}">
-                                    <ui:fragment rendered="#{empty EditDatafilesPage.fileMetadatas}">
+                                    <ui:fragment rendered="#{!hasFileMetadatas}">
                                         <p class="help-block">
                                             #{bundle['file.createUploadDisabled']}
                                         </p>
                                     </ui:fragment>
-                                    <ui:fragment rendered="#{!empty EditDatafilesPage.fileMetadatas}">
+                                    <ui:fragment rendered="#{hasFileMetadatas}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-warning-sign text-warning"/> <span class="text-warning">#{bundle['file.rsyncUpload.rsyncUploadDisabledDueFileUploadedViaHttp']}</span>
                                         </p>
@@ -193,7 +245,7 @@
                                 </ui:fragment>
                                 <ui:fragment rendered="#{!createDataset}"> 
                                     <!-- NO RSYNC/PACKAGE FILE YET. PROVIDE INSTRUCTIONS: DOWNLOAD TO UPLOAD. -->
-                                    <ui:fragment rendered="#{empty EditDatafilesPage.fileMetadatas and EditDatafilesPage.isHasRsyncScript()}">
+                                    <ui:fragment rendered="#{!hasFileMetadatas and hasRsyncScript}">
                                         <p class="help-block">
                                             <h:outputFormat value="#{bundle['file.rsyncUpload.info']}" escape="false">
                                                 <f:param value="#{systemConfig.guidesBaseUrl}"/>
@@ -221,7 +273,7 @@
                                         </ol>
                                     </ui:fragment>
                                     <!-- RSYNC/PACKAGE FILE ALREADY EXISTS. THERE CAN BE ONLY ONE. -->
-                                    <ui:fragment rendered="#{EditDatafilesPage.workingVersion.hasPackageFile}">
+                                    <ui:fragment rendered="#{hasPackageFile}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-warning-sign text-warning"></span>
                                             <h:outputFormat class="text-warning" value=" #{bundle['file.rsyncUpload.filesExist']}" escape="false">
@@ -236,26 +288,26 @@
                                             </h:outputFormat>
                                         </p>
                                     </ui:fragment>
-                                    <ui:fragment rendered="#{EditDatafilesPage.workingVersion.hasNonPackageFile and !EditDatafilesPage.workingVersion.dataset.released}">
+                                    <ui:fragment rendered="#{hasNonPackageFile and !EditDatafilesPage.workingVersion.dataset.released}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-warning-sign text-warning"></span>
                                             <h:outputText class="text-warning" value=" #{bundle['file.rsyncUpload.rsyncUploadDisabledDueFileUploadedViaHttp']}"/>
                                         </p>
                                     </ui:fragment>
-                                    <ui:fragment rendered="#{EditDatafilesPage.workingVersion.hasNonPackageFile and EditDatafilesPage.workingVersion.dataset.released}">
+                                    <ui:fragment rendered="#{hasNonPackageFile and EditDatafilesPage.workingVersion.dataset.released}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-warning-sign text-warning"></span>
                                             <h:outputText class="text-warning" value=" #{bundle['file.rsyncUpload.rsyncUploadDisabledDueFileUploadedViaHttpAndPublished']}"/>
                                         </p>
                                     </ui:fragment>
                                     <!-- HTTP FILE ALREADY EXISTS. THERE CAN BE ONLY ONE. -->
-                                    <ui:fragment rendered="#{!empty EditDatafilesPage.fileMetadatas}">
+                                    <ui:fragment rendered="#{hasFileMetadatas}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-warning-sign text-warning"/> <span class="text-warning">#{bundle['file.rsyncUpload.rsyncUploadDisabledDueFileUploadedViaHttp']}</span>
                                         </p>
                                     </ui:fragment>
                                     <!-- CAN'T DOWNLOAD RSYNC SCRIPT DUE to DCM BACKEND BROKEN. -->
-                                    <ui:fragment rendered="#{empty EditDatafilesPage.workingVersion.fileMetadatas and !EditDatafilesPage.isHasRsyncScript()}">
+                                    <ui:fragment rendered="#{empty EditDatafilesPage.workingVersion.fileMetadatas and !hasRsyncScript}">
                                         <p class="help-block">
                                             <span class="glyphicon glyphicon-exclamation-sign text-danger"></span>
                                             <h:outputFormat class="text-danger" value=" #{bundle['file.rsyncUpload.noScriptBroken']}" escape="false">
@@ -290,15 +342,15 @@
                                 </ui:fragment>
                             </div>
                         </div>
-                    </div>               
+                    </div>
                     
-                    <p:message for="fileUpload" id="uploadMessage" display="text" />
+                    <p:message for="fileUpload" id="uploadMessage" display="text" escape="false"/>
                     
                     <p:commandButton id="updateEditDataFilesButtonsForUpload" action="#{EditDatafilesPage.uploadFinished()}" update="datasetForm:editDataFilesButtons" rendered="#{showFileButtonUpdate}" style="display:none"/>
                     <p:commandButton id="updateEditDataFilesButtonsForDelete" action="#{EditDatafilesPage.deleteFilesCompleted()}" update="datasetForm:editDataFilesButtons" rendered="#{showFileButtonUpdate}" style="display:none"/>
-                    <p:commandButton id="AllUploadsFinished" action="#{EditDatafilesPage.uploadFinished()}" update="@([id$=filesButtons]),datasetForm:contentOfHttpPanel,datasetForm:fileUpload,datasetForm:dropBoxUserButton,datasetForm:uploadMessage,datasetForm:rsyncPanel,datasetForm:filesCounts,datasetForm:filesTable" oncomplete="javascript:bind_bsui_components();javascript:uploadWidgetDropMsg();" style="display:none"/> 
+                    <p:commandButton id="AllUploadsFinished" action="#{EditDatafilesPage.uploadFinished()}" update="@([id$=filesButtons]),datasetForm:contentOfHttpPanel,datasetForm:fileUpload,datasetForm:dropBoxUserButton,datasetForm:uploadMessage,datasetForm:rsyncPanel,datasetForm:filesCounts,datasetForm:filesTable" oncomplete="javascript:uploadWidgetDropMsg();" style="display:none"/> 
                     <p:commandButton id="dropBoxUploadFinished" action="#{EditDatafilesPage.uploadFinished()}" update="@([id$=filesButtons]),datasetForm:fileUpload,datasetForm:dropBoxUserButton,datasetForm:dropBoxUploadMessage,datasetForm:rsyncPanel,datasetForm:filesCounts,datasetForm:filesTable" style="display:none"/>
-                    <p:commandButton id="allDeletesFinished" action="#{EditDatafilesPage.deleteFilesCompleted()}" update="@([id$=filesButtons]),datasetForm:fileUpload,datasetForm:dropBoxUserButton,datasetForm:uploadMessage,datasetForm:rsyncPanel,datasetForm:filesCounts,datasetForm:filesTable" oncomplete="javascript:bind_bsui_components();javascript:uploadWidgetDropMsg();" style="display:none"/> 
+                    <p:commandButton id="allDeletesFinished" action="#{EditDatafilesPage.deleteFilesCompleted()}" update="@([id$=filesButtons]),datasetForm:fileUpload,datasetForm:dropBoxUserButton,datasetForm:uploadMessage,datasetForm:rsyncPanel,datasetForm:filesCounts,datasetForm:filesTable" oncomplete="javascript:uploadWidgetDropMsg();" style="display:none"/> 
                     <!-- ????? TODO: How scalable are all these hidden update buttons ????? -->
                     <!-- ????? 
                     datasetForm:fileUpload,
@@ -320,21 +372,21 @@
                     <p:autoUpdate />
                     <p:outputPanel >
                         <p:dataTable id="filesTable" 
-                                     value="#{EditDatafilesPage.fileMetadatas}"
-                                     rendered="#{!empty EditDatafilesPage.fileMetadatas or !EditDatafilesPage.showFileUploadFragment()}"
+                                     value="#{fileMetadatas}"
+                                     rendered="#{hasFileMetadatas or !EditDatafilesPage.showFileUploadFragment()}"
                                      rowIndexVar="rowNum" 
                                      rowKey="#{fileMetadata.dataFile.storageIdentifier}"
                                      selection="#{EditDatafilesPage.selectedFiles}" 
                                      var="fileMetadata" 
                                      widgetVar="filesTable"
-                                     emptyMessage="#{datasetPage || EditDatafilesPage.showFileUploadFragment() ? bundle['file.noUploadedFiles.tip'] : bundle['file.noSelectedFiles.tip']}"
+                                     emptyMessage="#{showFileUploadFragment ? bundle['file.noUploadedFiles.tip'] : bundle['file.noSelectedFiles.tip']}"
                                      ariaRowLabel="#{bundle['file.select.action']} #{fileMetadata.label}">
                             <f:facet name="header">
                                 <div jsf:id="filesHeaderBlock" class="row">
                                     <div id="filesHeaderCount" class="col-xs-6 text-left">
                                         <!-- Files Count -->
-                                        <h:outputFormat value="#{datasetPage ? bundle['file.count.shown'] : bundle['file.count.shown']}" styleClass="highlightBold" rendered="#{!empty EditDatafilesPage.fileMetadatas}">
-                                            <f:param value="#{EditDatafilesPage.fileMetadatas.size()}"/>
+                                        <h:outputFormat value="#{datasetPage ? bundle['file.count.shown'] : bundle['file.count.shown']}" styleClass="highlightBold" rendered="#{!empty hasFileMetadatas}">
+                                            <f:param value="#{fileMetadatas.size()}"/>
                                         </h:outputFormat>
                                     </div>
                                 </div>
@@ -348,13 +400,13 @@
                                     <div class="pull-left col-file-thumb">
                                         <div class="thumbnail-block text-center">
                                             <!-- Thumbnail Preview -->
-                                            <span class="file-thumbnail-preview-img" jsf:rendered="#{!empty fileMetadata.dataFile.id and dataFileServiceBean.isThumbnailAvailable(fileMetadata.dataFile)}"
+                                            <span class="file-thumbnail-preview-img" jsf:rendered="#{!empty fileMetadata.dataFile.id and thumbnailServiceWrapper.isThumbnailAvailable(fileMetadata.dataFile)}"
                                                   data-container="body" data-toggle="popover" data-placement="top" data-trigger="hover" data-html="true" data-content="&lt;img src=&#34;/api/access/datafile/#{fileMetadata.dataFile.id}?imageThumb=400&#34; alt=&#34;#{bundle['file.preview']} #{fileMetadata.label}&#34; /&gt;"
                                                   data-template='&lt;div class="popover thumb-preview" role="tooltip"&gt;&lt;div class="arrow"&gt;&lt;/div&gt;&lt;h3 class="popover-title"&gt;&lt;/h3&gt;&lt;div class="popover-content"&gt;&lt;/div&gt;&lt;/div&gt;'>
                                                 <p:graphicImage value="/api/access/datafile/#{fileMetadata.dataFile.id}?imageThumb=true" alt="#{fileMetadata.label}"/>
                                             </span>
                                             <!-- Default Icon -->
-                                            <span class="icon-#{dataFileServiceBean.getFileThumbnailClass(fileMetadata.dataFile)} file-thumbnail-icon text-muted" jsf:rendered="#{(!empty fileMetadata.dataFile.id and !dataFileServiceBean.isThumbnailAvailable(fileMetadata.dataFile)) or (empty fileMetadata.dataFile.id and !fileMetadata.dataFile.previewImageAvailable)}"/>
+                                            <span class="icon-#{dataFileServiceBean.getFileThumbnailClass(fileMetadata.dataFile)} file-thumbnail-icon text-muted" jsf:rendered="#{(!empty fileMetadata.dataFile.id and !thumbnailServiceWrapper.isThumbnailAvailable(fileMetadata.dataFile)) or (empty fileMetadata.dataFile.id and !fileMetadata.dataFile.previewImageAvailable)}"/>
                                             <ui:fragment rendered="#{empty fileMetadata.dataFile.id and !empty fileMetadata.dataFile.storageIdentifier and fileMetadata.dataFile.previewImageAvailable}">
                                                 <img src="#{EditDatafilesPage.getTemporaryPreviewAsBase64(fileMetadata.dataFile.storageIdentifier)}" alt="#{fileMetadata.label}"/>
                                                 <h:outputText id="imgPreview" value="#{bundle['preview']}" styleClass="bg-info text-info text-center show"/>
@@ -372,13 +424,14 @@
                                         </div>
                                     </div>
                                     <div class="col-md-10 file-metadata-block">
-                                        <label class="control-label" for="datasetForm:filesTable:#{rowNum}:fileName" style="margin-right:1em;margin-bottom:.5em;">
+                                        <label class="control-label" jsf:for="fileName" style="margin-right:1em;margin-bottom:.5em;">
                                             #{bundle['file.fileName']}
                                         </label>
-                                        <p:inputText id="fileName" value="#{fileMetadata.label}" style="width:60%; margin-bottom:.5em;" disabled="#{fileMetadata.dataFile.filePackage}"/>
+                                        <p:inputText id="fileName" value="#{fileMetadata.labelNoExtension}" style="width:60%; margin-bottom:.5em;" disabled="#{fileMetadata.dataFile.filePackage}"/>
+                                        <h:outputText value="#{fileMetadata.originalExtension}"/>
                                         <p:message for="datasetForm:filesTable:#{rowNum}:fileName"/>
 
-                                        <label class="control-label" for="datasetForm:filesTable:#{rowNum}:fileDirectoryName" style="margin-right:1em;margin-bottom:.5em;">
+                                        <label class="control-label" jsf:for="fileDirectoryName" style="margin-right:1em;margin-bottom:.5em;">
                                             #{bundle['file.metadataTab.fileMetadata.hierarchy.label']}    
                                             <span class="glyphicon glyphicon-question-sign tooltip-icon"
                                                   data-toggle="tooltip" data-placement="auto right" data-original-title="#{bundle['file.metadataTab.fileMetadata.hierarchy.tip']}"></span>
@@ -406,7 +459,7 @@
                                             <label class="control-label" for="fileDescription" style="margin-right:1em; margin-top:.5em; vertical-align:top;">
                                                 #{bundle.description}
                                             </label>
-                                            <p:inputTextarea id="fileDescription" rows="2" cols="40" value="#{fileMetadata.description}" style="width:60%; margin-top:.5em;"/> 
+                                            <p:inputTextarea id="fileDescription" rows="2" cols="40" value="#{fileMetadata.description}" escape="false" style="width:60%; margin-top:.5em;"/>
                                             <p:watermark for="fileDescription" value="#{bundle['file.addDescription']}"/>
                                             <p:message for="fileDescription"/>
                                         </div>
@@ -427,31 +480,34 @@
                             </p:column>
                             <p:column class="col-file-action button-block text-right" style="width:30%;" ariaHeaderText="#{bundle['file.actionsBlock']}">
                                 <f:facet name="header" class="col-file-action text-right">
-                                    <div jsf:id="editFilesRestrictDeletePanel" style="margin-right:14px;" class="btn-group" jsf:rendered="#{!empty EditDatafilesPage.fileMetadatas and !EditDatafilesPage.workingVersion.hasPackageFile}">
+                                    <div jsf:id="editFilesRestrictDeletePanel" style="margin-right:14px;" class="btn-group" jsf:rendered="#{hasFileMetadatas and !hasPackageFile}">
                                         <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
                                             <span class="glyphicon glyphicon-pencil"/> #{bundle['file.editFilesSelected']} <span class="caret"></span>
                                         </button>
                                         <ul class="dropdown-menu multi-level pull-right text-left">
                                             <li class="#{DatasetPage.lockedFromEdits ? 'disabled' : ''}">
                                                 <p:commandLink  onclick="if (!testFilesSelected2()) return false;" 
-                                                                oncomplete="PF('editDeleteFileConfirmation').show();">                                                  
-                                                    <h:outputText value="#{bundle['file.delete']}"/> 
+                                                                oncomplete="PF('deleteFileConfirmation').show();">                                                  
+                                                    <h:outputText value="#{bundle['file.delete']}"/>  
+                                                    <f:setPropertyActionListener target="#{DatasetPage.workingVersion.fileMetadatas}" value="#{fileMetadatas}" /> 
+                                                    <f:setPropertyActionListener target="#{DatasetPage.selectedFiles}" value="#{EditDatafilesPage.selectedFiles}" /> 
                                                 </p:commandLink>
                                             </li>
-                                            <li>
+                                            <li jsf:rendered="#{!DatasetPage.hasPublicStore}">
                                                 <p:commandLink  onclick="if (!testFilesSelected2()) return false;"
-                                                                update="@([id$=editFileAccessPopup])" 
-                                                                oncomplete="PF('editFileAccessPopup').show();bind_bsui_components();">                                                               
+                                                                update="@([id$=accessPopup])" 
+                                                                oncomplete="PF('accessPopup').show();">                                                               
                                                     <h:outputText value="#{bundle['file.restrict']}"/>
                                                     <f:setPropertyActionListener target="#{EditDatafilesPage.termsOfAccess}" value="#{version.termsOfUseAndAccess.termsOfAccess}" />
                                                     <f:setPropertyActionListener target="#{EditDatafilesPage.fileAccessRequest}" value="#{version.termsOfUseAndAccess.fileAccessRequest}" />                        
+                                                    <f:setPropertyActionListener target="#{DatasetPage.selectedFiles}" value="#{EditDatafilesPage.selectedFiles}" /> 
                                                 </p:commandLink>
                                             </li>
-                                            <li>
+                                            <li jsf:rendered="#{!DatasetPage.hasPublicStore}">
                                                 <p:commandLink  onclick="if (!testFilesSelected2()) return false;"
                                                                 actionListener="#{EditDatafilesPage.restrictFiles(false)}"
                                                                 update="filesTable,:messagePanel" 
-                                                                oncomplete="javascript:toggle_dropdown();javascript:bind_bsui_components();" >
+                                                                oncomplete="javascript:toggle_dropdown();" >
                                                     <h:outputText value="#{bundle['file.unrestrict']}"/>
                                                 </p:commandLink>
                                             </li>
@@ -459,7 +515,7 @@
                                                 <p:commandLink id="fileCategoriesButton2"
                                                                actionListener="#{EditDatafilesPage.refreshTagsPopUp(fileMetadata)}"
                                                                update=":datasetForm:editFileTagsPopup"
-                                                               oncomplete="PF('editFileTagsPopup').show();bind_bsui_components();">
+                                                               >
                                                     #{bundle['file.tags']} 
                                                 </p:commandLink>    
                                             </li>     
@@ -486,7 +542,7 @@
                                             <li class="#{DatasetPage.lockedFromEdits ? 'disabled' : ''}">
                                                 <p:commandLink id="fileProvenanceButton"
                                                                update=":datasetForm:editProvenancePopup"
-                                                               oncomplete="PF('editProvenancePopup').show();bind_bsui_components();">
+                                                               oncomplete="PF('editProvenancePopup').show();">
                                                     <f:actionListener binding="#{provPopupFragmentBean.updatePopupStateAndDataset(fileMetadata, EditDatafilesPage.dataset)}"/>
                                                     #{bundle['file.provenance']} 
                                                 </p:commandLink>    
@@ -510,7 +566,7 @@
                                             <p:commandLink id="fileCategoriesButton"
                                                            actionListener="#{EditDatafilesPage.refreshTagsPopUp(fileMetadata)}"
                                                            update=":datasetForm:editFileTagsPopup"
-                                                           oncomplete="PF('editFileTagsPopup').show();bind_bsui_components();">
+                                                           oncomplete="PF('editFileTagsPopup').show();">
                                                 #{bundle['file.tags']} 
                                             </p:commandLink>
                                         </li>        
@@ -561,14 +617,15 @@
     <!-- END: Static Tab Layout -->
     <p:remoteCommand  name="returnToDatasetPage" partialSubmit="true" async="true" update="" action="#{EditDatafilesPage.returnToDatasetOnly()}"  />
     <p:remoteCommand  name="requestDirectUploadUrls" partialSubmit="true" async="true" update="@none" action="#{EditDatafilesPage.requestDirectUploadUrls()}" onerror="javascript:uploadFailure();" />
-    <p:remoteCommand  name="handleExternalUpload" partialSubmit="true" async="true"  update="@none" action="#{EditDatafilesPage.handleExternalUpload()}" oncomplete="javascript:bind_bsui_components();directUploadFinished();" onerror="javascript:uploadFailure();" />
+    <p:remoteCommand  name="handleExternalUpload" partialSubmit="true" async="true"  update="@none" action="#{EditDatafilesPage.handleExternalUpload()}" oncomplete="directUploadFinished();" onerror="javascript:uploadFailure();" />
     <!-- TODO: a message panel informing the unauthorized, or unauthenticated user that they don't have permission - should it be here? L.A. 4.2 -->
 
     <!-- Popups -->
     <p:dialog id="fileTypeDifferentPopup" styleClass="smallPopUp" header="#{bundle['file.addreplace.content_type.header']}" widgetVar="fileTypeDifferentPopup" modal="true">
         <p class="text-warning"><span class="glyphicon glyphicon-warning-sign"/> #{EditDatafilesPage.warningMessageForFileTypeDifferentPopUp}</p>
         <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" value="#{bundle['file.delete']}" onclick="PF('fileTypeDifferentPopup').hide()" oncomplete="uploadWidgetDropMsg();"
+            <p:commandButton styleClass="btn btn-default" value="#{bundle['file.delete']}" onclick="PF('fileTypeDifferentPopup').hide()" oncomplete="uploadWidgetDropMsg();
+                                   #{useDirectUpload ? 'setupDirectUpload(true);': ''}"
                              action="#{EditDatafilesPage.deleteFiles()}"
                              update=":#{p:resolveClientId('datasetForm:filesTable', view)},:messagePanel,:#{p:resolveClientId('datasetForm:fileUpload', view)},uploadMessage"/>
             <button class="btn btn-default" onclick="PF('fileTypeDifferentPopup').hide();" type="button">
@@ -595,59 +652,6 @@
         </div>
     </p:dialog>
     
-    <p:dialog id="editDeleteFileConfirmation" styleClass="smallPopUp" header="#{bundle['file.deleteFileDialog.header']}" widgetVar="editDeleteFileConfirmation" modal="true">
-        <p class="text-warning"><span class="glyphicon glyphicon-warning-sign"/> #{bundle['file.deleteFileDialog.tip']}</p>
-        <ui:fragment rendered="#{EditDatafilesPage.dataset.released}">
-            <p class="text-warning"><span class="glyphicon glyphicon-warning-sign"/> #{bundle['file.deleteFileDialog.failed.tip']}</p>
-        </ui:fragment>
-        <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" value="#{bundle.continue}" onclick="PF('editDeleteFileConfirmation').hide()" oncomplete="window.scrollTo(0, 0);deleteFinished();bind_bsui_components();"
-                             update=":#{p:resolveClientId('datasetForm:filesTable', view)},:messagePanel,:#{p:resolveClientId('datasetForm:fileUpload', view)},uploadMessage" action="#{EditDatafilesPage.deleteFiles()}"/>
-            <button class="btn btn-link" onclick="PF('editDeleteFileConfirmation').hide();bind_bsui_components();" type="button">                              
-                #{bundle.cancel}
-            </button>
-        </div>
-    </p:dialog>
-    <p:dialog id="editFileAccessPopup" header="#{bundle['dataset.access.accessHeader']}" widgetVar="editFileAccessPopup" modal="true">
-        <p:focus context="editFileAccessPopup"/>
-        <p class="help-block">
-            #{bundle['dataset.access.description']}
-        </p>        
-        <div class="form-horizontal">
-            <div class="form-group">
-                <label for="metadata_TermsAccess" class="col-sm-3 control-label">
-                    #{bundle['file.dataFilesTab.terms.list.termsOfAccess.termsOfsAccess']}
-                    <span class="glyphicon glyphicon-question-sign tooltip-icon"
-                          data-toggle="tooltip" data-placement="auto top" data-original-title="#{bundle['file.dataFilesTab.terms.list.termsOfAccess.termsOfsAccess.title']}"></span>
-                </label>
-                <div class="col-sm-9">
-                    <p:inputTextarea styleClass="form-control"
-                                     value="#{EditDatafilesPage.termsOfAccess}" autoResize="false" rows="5"/>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="metadata_RequestAccess" class="col-sm-3 control-label">
-                    #{bundle['file.dataFilesTab.terms.list.termsOfAccess.requestAccess']}
-                    <span class="glyphicon glyphicon-question-sign tooltip-icon"
-                          data-toggle="tooltip" data-placement="auto top" data-original-title="#{bundle['file.dataFilesTab.terms.list.termsOfAccess.requestAccess.title']}"></span>
-                </label>
-                <div class="col-sm-9">
-                    <p:selectBooleanCheckbox id="editFileRequestAccess" itemLabel="#{bundle['file.dataFilesTab.terms.list.termsOfAccess.requestAccess.enableBtn']}" 
-                                             value="#{EditDatafilesPage.fileAccessRequest}"/>
-                </div>
-            </div>
-        </div>
-        <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" value="#{bundle.continue}" 
-                             onclick="PF('editFileAccessPopup').hide()" 
-                             action="#{EditDatafilesPage.restrictFiles(true)}"
-                             update="filesTable,:messagePanel"
-                             oncomplete="javascript:bind_bsui_components();" />
-            <button class="btn btn-link" onclick="PF('editFileAccessPopup').hide()" type="button">                              
-                #{bundle.cancel}
-            </button>               
-        </div>
-    </p:dialog>
     <p:dialog id="fileAdvancedOptions" styleClass="dialog-submenu smallPopUp" header="#{bundle['file.advancedIngestOptions']}" widgetVar="fileAdvancedOptions" modal="true">
         <p:focus context="fileAdvancedOptions"/>
         <div class="form-horizontal">
@@ -826,8 +830,8 @@
             </div>
         </div>
         <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" id="fileAdvancedOptionsSaveButton" value="#{bundle.saveChanges}" oncomplete="PF('fileAdvancedOptions').hide();javascript:bind_bsui_components();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.saveAdvancedOptions()}"/>
-            <p:commandButton styleClass="btn btn-link" id="fileAdvancedOptionsCancelButton" value="#{bundle.cancel}" onclick="PF('fileAdvancedOptions').hide();PF('blockFileForm').hide();" oncomplete="javascript:bind_bsui_components();" actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForIngestOptionsPopup()}"/>
+            <p:commandButton styleClass="btn btn-default" id="fileAdvancedOptionsSaveButton" value="#{bundle.saveChanges}" oncomplete="PF('fileAdvancedOptions').hide();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.saveAdvancedOptions()}"/>
+            <p:commandButton styleClass="btn btn-link" id="fileAdvancedOptionsCancelButton" value="#{bundle.cancel}" onclick="PF('fileAdvancedOptions').hide();PF('blockFileForm').hide();"  actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForIngestOptionsPopup()}"/>
         </div>
     </p:dialog>
     <!-- end of "advanced options" dialogue -->
@@ -835,7 +839,7 @@
         <p:focus context="fileSetThumbnail"/>
         <div class="form-horizontal">
             <div class="form-group">
-                <label for="datasetThumbnailImage" class="col-sm-4 control-label">
+                <label jsf:for="datasetThumbnailImage_input" class="col-sm-4 control-label">
                     #{bundle['file.datasetThumbnail']}
                 </label>
                 <div class="col-sm-8">
@@ -847,8 +851,8 @@
             </div>
         </div>
         <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" id="fileSetThumbnailSaveBtn" value="#{bundle.saveChanges}" oncomplete="PF('fileSetThumbnail').hide();javascript:bind_bsui_components();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.saveAsDesignatedThumbnail()}"/>
-            <p:commandButton styleClass="btn btn-link" id="fileSetThumbnailCancelBtn" value="#{bundle.cancel}" onclick="PF('fileSetThumbnail').hide();PF('blockFileForm').hide();" oncomplete="javascript:bind_bsui_components();" actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForThumbnailPopup()}"/>
+            <p:commandButton styleClass="btn btn-default" id="fileSetThumbnailSaveBtn" value="#{bundle.saveChanges}" oncomplete="PF('fileSetThumbnail').hide();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.saveAsDesignatedThumbnail()}"/>
+            <p:commandButton styleClass="btn btn-link" id="fileSetThumbnailCancelBtn" value="#{bundle.cancel}" onclick="PF('fileSetThumbnail').hide();PF('blockFileForm').hide();"  actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForThumbnailPopup()}"/>
         </div>
     </p:dialog>
     <p:dialog id="fileThumbnailConfirm" styleClass="smallPopUp" header="#{bundle['file.setThumbnail.header']}" widgetVar="fileThumbnailConfirm" modal="true">
@@ -858,8 +862,8 @@
             </p>
         </div>
         <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" id="fileThumbnailConfirmCntBtn" value="#{bundle.continue}" oncomplete="PF('fileThumbnailConfirm').hide();javascript:bind_bsui_components();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.deleteDatasetLogoAndUseThisDataFileAsThumbnailInstead()}"/>
-            <button class="btn btn-link" onclick="PF('fileThumbnailConfirm').hide();PF('blockFileForm').hide();bind_bsui_components();" type="button">                              
+            <p:commandButton styleClass="btn btn-default" id="fileThumbnailConfirmCntBtn" value="#{bundle.continue}" oncomplete="PF('fileThumbnailConfirm').hide();" update=":datasetForm:filesTable,:messagePanel" actionListener="#{EditDatafilesPage.deleteDatasetLogoAndUseThisDataFileAsThumbnailInstead()}"/>
+            <button class="btn btn-link" onclick="PF('fileThumbnailConfirm').hide();PF('blockFileForm').hide();" type="button">                              
                 #{bundle.cancel}
             </button>
         </div>
@@ -929,7 +933,7 @@
                                           filter="false">
                         <f:selectItems value="#{EditDatafilesPage.tabFileTags}" />
                         <p:ajax event="toggleSelect" listener="#{EditDatafilesPage.handleTabularTagsSelection}" update="tabularDataTags" />
-                        <p:ajax event="change" listener="#{EditDatafilesPage.TabularTagsSelection}" update="tabularDataTags" />
+                        <p:ajax event="change" listener="#{EditDatafilesPage.handleTabularTagsSelection}" update="tabularDataTags" />
                     </p:selectCheckboxMenu>
                     <p:message for="tabularDataTags" display="text" />
                 </div>
@@ -945,8 +949,8 @@
             </div> -->
         </div>
         <div class="button-block">
-            <p:commandButton styleClass="btn btn-default" id="editFileTagsPopupSaveButton" value="#{bundle.saveChanges}" oncomplete="PF('editFileTagsPopup').hide();javascript:bind_bsui_components();" update=":datasetForm:filesTable" actionListener="#{EditDatafilesPage.saveFileTagsAndCategories()}"/>
-            <p:commandButton styleClass="btn btn-link" id="editFileTagsPopupCancelButton" value="#{bundle.cancel}" onclick="PF('editFileTagsPopup').hide();PF('blockFileForm').hide();" oncomplete="javascript:bind_bsui_components();" update=":datasetForm:filesTable" actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForTagsPopup()}"/>
+            <p:commandButton styleClass="btn btn-default" id="editFileTagsPopupSaveButton" value="#{bundle.saveChanges}" oncomplete="PF('editFileTagsPopup').hide();" update=":datasetForm:filesTable" actionListener="#{EditDatafilesPage.saveFileTagsAndCategories()}"/>
+            <p:commandButton styleClass="btn btn-link" id="editFileTagsPopupCancelButton" value="#{bundle.cancel}" onclick="PF('editFileTagsPopup').hide();PF('blockFileForm').hide();" update=":datasetForm:filesTable" actionListener="#{EditDatafilesPage.clearFileMetadataSelectedForTagsPopup()}"/>
         </div>
     </p:dialog>     
     <!-- Simple Popup For Select Files-->
@@ -958,7 +962,7 @@
                 #{bundle.close}
             </button>
         </div>
-    </p:dialog>       
+    </p:dialog> 
     <script src="/resources/js/dropins.js" id="dropboxjs" data-app-key="#{EditDatafilesPage.dropBoxKey}"/>
     <script>
         //<![CDATA[

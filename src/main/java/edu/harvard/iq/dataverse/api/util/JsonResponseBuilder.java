@@ -1,17 +1,19 @@
 package edu.harvard.iq.dataverse.api.util;
 
-import edu.harvard.iq.dataverse.api.ApiBlockingFilter;
-
-import javax.json.Json;
-import javax.json.JsonValue;
-import javax.json.JsonObjectBuilder;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonValue;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
+
+import edu.harvard.iq.dataverse.api.filter.ApiBlockingFilter;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -21,7 +23,7 @@ import java.util.logging.Logger;
 
 public class JsonResponseBuilder {
     
-    private JsonObjectBuilder entityBuilder = Json.createObjectBuilder();
+    private JsonObjectBuilder entityBuilder = JsonUtil.createObjectBuilder();
     private Response.ResponseBuilder jerseyResponseBuilder;
     private boolean alreadyLogged = false;
     
@@ -120,7 +122,7 @@ public class JsonResponseBuilder {
      */
     public JsonResponseBuilder requestContentType(HttpServletRequest request) {
         String type = request.getContentType();
-        this.entityBuilder.add("requestContentType", ((type==null) ? JsonValue.NULL : Json.createValue(type)));
+        this.entityBuilder.add("requestContentType", ((type==null) ? JsonValue.NULL : JsonUtil.createValue(type)));
         return this;
     }
     
@@ -131,7 +133,7 @@ public class JsonResponseBuilder {
      * @return The enhanced builder
      */
     public JsonResponseBuilder internalError(Throwable ex) {
-        this.entityBuilder.add("interalError", ex.getClass().getSimpleName());
+        this.entityBuilder.add("internalError", ex.getClass().getSimpleName());
         if (ex.getCause() != null) {
             this.entityBuilder.add("internalCause", ex.getCause().getClass().getSimpleName());
         }
@@ -143,8 +145,9 @@ public class JsonResponseBuilder {
      * @return JAX-RS response including JSON message
      */
     public Response build() {
+        JsonObject entity = entityBuilder.build();
         return jerseyResponseBuilder.type(MediaType.APPLICATION_JSON_TYPE)
-            .entity(this.entityBuilder.build())
+            .entity(entity)
             .build();
     }
     
@@ -215,13 +218,19 @@ public class JsonResponseBuilder {
         if ( ! logger.isLoggable(level) || alreadyLogged )
             return this;
         
-        StringBuilder metadata = new StringBuilder("");
-        this.entityBuilder.build()
-            .forEach((k,v) -> metadata.append("_"+k+"="+v.toString()+";"));
+        // This is necessary because we need to build in two places: logging and response creation.
+        // Without cloning the object builder, we'd end up with an empty entity in the response when logging before that.
+        JsonObject entity = this.entityBuilder.build();
+        this.entityBuilder = JsonUtil.createObjectBuilder(entity);
+        
+        StringBuilder metadata = new StringBuilder();
+        entity.forEach((k,v) -> metadata.append("_").append(k).append("=").append(v.toString()).append(";"));
+        
         // remove trailing ;
         metadata.deleteCharAt(metadata.length()-1);
         
         if (ex.isPresent()) {
+            ex.get().printStackTrace();
             metadata.append("|");
             logger.log(level, metadata.toString(), ex);
             if(includeStackTrace) {

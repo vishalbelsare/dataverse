@@ -1,26 +1,28 @@
 package edu.harvard.iq.dataverse.engine.command.impl;
 
-import edu.harvard.iq.dataverse.*;
+import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.DataFileCategory;
+import edu.harvard.iq.dataverse.Dataset;
+import edu.harvard.iq.dataverse.DatasetLock;
+import edu.harvard.iq.dataverse.DatasetVersion;
+import edu.harvard.iq.dataverse.DatasetVersionDifference;
+import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.authorization.Permission;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
-import edu.harvard.iq.dataverse.batch.util.LoggingUtil;
 import edu.harvard.iq.dataverse.engine.command.CommandContext;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.RequiredPermissions;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.IllegalCommandException;
+import edu.harvard.iq.dataverse.util.DatasetFieldUtil;
 import edu.harvard.iq.dataverse.util.FileMetadataUtil;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.validation.ConstraintViolationException;
-
-import org.apache.solr.client.solrj.SolrServerException;
+import jakarta.validation.ConstraintViolationException;
 
 /**
  *
@@ -29,11 +31,11 @@ import org.apache.solr.client.solrj.SolrServerException;
 @RequiredPermissions(Permission.EditDataset)
 public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset> {
 
-    private static final Logger logger = Logger.getLogger(UpdateDatasetVersionCommand.class.getCanonicalName());
+    static final Logger logger = Logger.getLogger(UpdateDatasetVersionCommand.class.getCanonicalName());
     private final List<FileMetadata> filesToDelete;
     private boolean validateLenient = false;
     private final DatasetVersion clone;
-    private final FileMetadata fmVarMet;
+    final FileMetadata fmVarMet;
     
     public UpdateDatasetVersionCommand(Dataset theDataset, DataverseRequest aRequest) {
         super(aRequest, theDataset);
@@ -63,7 +65,7 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
         this.filesToDelete = new ArrayList<>();
         this.clone = null;
         this.fmVarMet = null;
-        for (FileMetadata fmd : theDataset.getEditVersion().getFileMetadatas()) {
+        for (FileMetadata fmd : theDataset.getOrCreateEditVersion().getFileMetadatas()) {
             if (fmd.getDataFile().equals(fileToDelete)) {
                 filesToDelete.add(fmd);
                 break;
@@ -98,11 +100,31 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
         if ( ! (getUser() instanceof AuthenticatedUser) ) {
             throw new IllegalCommandException("Only authenticated users can update datasets", this);
         }
-        
+
         Dataset theDataset = getDataset();        
-        ctxt.permissions().checkEditDatasetLock(theDataset, getRequest(), this);
+        ctxt.permissions().checkUpdateDatasetVersionLock(theDataset, getRequest(), this);
         Dataset savedDataset = null;
         
+        DatasetVersion persistedVersion = clone;
+        /*
+         * Unless a pre-change clone has been provided, we need to get it from the db.
+         * There are two cases: We're updating an existing draft, which has an id, and
+         * exists in the database We've created a new draft, with null id, and we need
+         * to get the lastest version in the db
+         * 
+         */
+        if(persistedVersion==null) {
+            Long id = getDataset().getLatestVersion().getId();
+            persistedVersion = ctxt.datasetVersion().find(id!=null ? id : getDataset().getLatestVersionForCopy(true).getId());
+        }
+        
+        //Will throw an IllegalCommandException if a system metadatablock is changed and the appropriate key is not supplied.
+        checkSystemMetadataKeyIfNeeded(getDataset().getOrCreateEditVersion(fmVarMet), persistedVersion);
+
+        getDataset().getOrCreateEditVersion().setLastUpdateTime(getTimestamp());
+
+        registerExternalVocabValuesIfAny(ctxt, getDataset().getOrCreateEditVersion(fmVarMet));
+
         try {
             // Invariant: Dataset has no locks preventing the update
             String lockInfoMessage = "saving current edits";
@@ -113,12 +135,13 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
                 logger.log(Level.WARNING, "Failed to lock the dataset (dataset id={0})", getDataset().getId());
             }
             
-            getDataset().getEditVersion(fmVarMet).setDatasetFields(getDataset().getEditVersion(fmVarMet).initDatasetFields());
-            validateOrDie(getDataset().getEditVersion(fmVarMet), isValidateLenient());
+            getDataset().getOrCreateEditVersion(fmVarMet).setDatasetFields(getDataset().getOrCreateEditVersion(fmVarMet).initDatasetFields());
 
-            final DatasetVersion editVersion = getDataset().getEditVersion(fmVarMet);
-            
-            tidyUpFields(editVersion);
+            validateOrDie(getDataset().getOrCreateEditVersion(fmVarMet), isValidateLenient());
+
+            final DatasetVersion editVersion = getDataset().getOrCreateEditVersion(fmVarMet);
+
+            DatasetFieldUtil.tidyUpFields(editVersion.getDatasetFields(), true);
 
             // Merge the new version into out JPA context, if needed.
             if (editVersion.getId() == null || editVersion.getId() == 0L) {
@@ -132,7 +155,7 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
             		throw e;
             	}
             }
-
+            //Set creator and create date for files if needed
             for (DataFile dataFile : theDataset.getFiles()) {
                 if (dataFile.getCreateDate() == null) {
                     dataFile.setCreateDate(getTimestamp());
@@ -203,12 +226,13 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
                     // If the datasetversion doesn't match, we have the fmd from a published version
                     // and we need to remove the one for the newly created draft instead, so we find
                     // it here
-                    logger.fine("Edit ver: " + theDataset.getEditVersion().getId());
+                    logger.fine("Edit ver: " + theDataset.getOrCreateEditVersion().getId());
                     logger.fine("fmd ver: " + fmd.getDatasetVersion().getId());
-                    if (!theDataset.getEditVersion().equals(fmd.getDatasetVersion())) {
-                        fmd = FileMetadataUtil.getFmdForFileInEditVersion(fmd, theDataset.getEditVersion());
+                    if (!theDataset.getOrCreateEditVersion().equals(fmd.getDatasetVersion())) {
+                        fmd = FileMetadataUtil.getFmdForFileInEditVersion(fmd, theDataset.getOrCreateEditVersion());
                     }
-                } 
+                }
+                fmd.setDataFile(ctxt.em().merge(fmd.getDataFile()));
                 fmd = ctxt.em().merge(fmd);
 
                 // There are two datafile cases as well - the file has been released, so we're
@@ -219,30 +243,33 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
                     ctxt.engine().submit(new DeleteDataFileCommand(fmd.getDataFile(), getRequest()));
                     // and remove the file from the dataset's list
                     theDataset.getFiles().remove(fmd.getDataFile());
-                } else {
-                    // if we aren't removing the file, we need to explicitly remove the fmd from the
-                    // context and then remove it from the datafile's list
+                    ctxt.em().remove(fmd.getDataFile());
                     ctxt.em().remove(fmd);
+                } else {
+                    ctxt.em().remove(fmd);
+                    // if we aren't removing the file, we need to remove it from the datafile's list
                     FileMetadataUtil.removeFileMetadataFromList(fmd.getDataFile().getFileMetadatas(), fmd);
                 }
-                // In either case, to fully remove the fmd, we have to remove any other possible
+                // In either case, we've removed from the  context 
+                // And, to fully remove the fmd, we have to remove any other possible
                 // references
                 // From the datasetversion
-                FileMetadataUtil.removeFileMetadataFromList(theDataset.getEditVersion().getFileMetadatas(), fmd);
+                FileMetadataUtil.removeFileMetadataFromList(theDataset.getOrCreateEditVersion().getFileMetadatas(), fmd);
                 // and from the list associated with each category
                 for (DataFileCategory cat : theDataset.getCategories()) {
                     FileMetadataUtil.removeFileMetadataFromList(cat.getFileMetadatas(), fmd);
                 }
+
             }
-            for(FileMetadata fmd: theDataset.getEditVersion().getFileMetadatas()) {
+            for(FileMetadata fmd: theDataset.getOrCreateEditVersion().getFileMetadatas()) {
                 logger.fine("FMD: " + fmd.getId() + " for file: " + fmd.getDataFile().getId() + "is in final draft version");    
             }
+            registerFilePidsIfNeeded(theDataset, ctxt, true);
             
             if (recalculateUNF) {
-                ctxt.ingest().recalculateDatasetVersionUNF(theDataset.getEditVersion());
+                ctxt.ingest().recalculateDatasetVersionUNF(theDataset.getOrCreateEditVersion());
             }
 
-            theDataset.getEditVersion().setLastUpdateTime(getTimestamp());
             theDataset.setModificationTime(getTimestamp());
 
             savedDataset = ctxt.em().merge(theDataset);
@@ -269,21 +296,12 @@ public class UpdateDatasetVersionCommand extends AbstractDatasetCommand<Dataset>
     
     @Override
     public boolean onSuccess(CommandContext ctxt, Object r) {
-
-        boolean retVal = true;
-        Dataset dataset = (Dataset) r;
-
-        try {
-            Future<String> indexString = ctxt.index().indexDataset(dataset, true);
-        } catch (IOException | SolrServerException e) {
-            String failureLogText = "Post update dataset indexing failed. You can kickoff a re-index of this dataset with: \r\n curl http://localhost:8080/api/admin/index/datasets/" + dataset.getId().toString();
-            failureLogText += "\r\n" + e.getLocalizedMessage();
-            LoggingUtil.writeOnSuccessFailureLog(this, failureLogText, dataset);
-            retVal = false;
-        }
-
-        return retVal;
-
+        // Async indexing significantly improves performance when updating datasets with thousands of files
+        // Indexing will be started immediately, unless an index is already busy for the given data
+        // (it will be scheduled then for later indexing of the newest version).
+        // See the documentation of asyncIndexDataset method for more details.
+        ctxt.index().asyncIndexDataset((Dataset) r, true);
+        return true;
     }
-
+    
 }

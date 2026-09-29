@@ -2,11 +2,11 @@ package edu.harvard.iq.dataverse;
 
 import edu.harvard.iq.dataverse.util.LruCache;
 import java.util.List;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 /**
  *
@@ -42,23 +42,24 @@ public class DataverseFacetServiceBean implements java.io.Serializable {
         cache.invalidate();
     }
     
-	public void deleteFacetsFor( Dataverse d ) {
-		em.createNamedQuery("DataverseFacet.removeByOwnerId")
-			.setParameter("ownerId", d.getId())
-				.executeUpdate();
+    public void deleteFacetsFor(Dataverse d) {
+        em.createNamedQuery("DataverseFacet.removeByOwnerId")
+                .setParameter("ownerId", d.getId())
+                .executeUpdate();
         cache.invalidate(d.getId());
-        
-	}
-	
+
+    }
+
     public DataverseFacet create(int displayOrder, DatasetFieldType fieldType, Dataverse ownerDv) {
         DataverseFacet dataverseFacet = new DataverseFacet();
-        
+
         dataverseFacet.setDisplayOrder(displayOrder);
         dataverseFacet.setDatasetFieldType(fieldType);
         dataverseFacet.setDataverse(ownerDv);
-        
         ownerDv.getDataverseFacets().add(dataverseFacet);
         em.persist(dataverseFacet);
+
+        cache.invalidate(ownerDv.getId());
         return dataverseFacet;
     }
     

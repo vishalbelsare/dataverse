@@ -4,16 +4,17 @@ package edu.harvard.iq.dataverse;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import java.io.Serializable;
 import java.util.MissingResourceException;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.NamedNativeQueries;
-import javax.persistence.NamedNativeQuery;
-import javax.persistence.NamedQueries;
-import javax.persistence.NamedQuery;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.NamedNativeQueries;
+import jakarta.persistence.NamedNativeQuery;
+import jakarta.persistence.NamedQueries;
+import jakarta.persistence.NamedQuery;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  *
@@ -38,6 +39,7 @@ import javax.persistence.NamedQuery;
             query = "select distinct type from auxiliaryfile where datafile_id = ?1")
 })
 @Entity
+@Schema(description = "Metadata for an auxiliary file associated with a data file, including format, origin, visibility, size, checksum, and type.")
 public class AuxiliaryFile implements Serializable {
     
     @Id
@@ -55,7 +57,10 @@ public class AuxiliaryFile implements Serializable {
     private String formatTag;
     
     private String formatVersion;
-    
+
+    /**
+     * The application/entity that created the auxiliary file.
+     */
     private String origin;
     
     private boolean isPublic;

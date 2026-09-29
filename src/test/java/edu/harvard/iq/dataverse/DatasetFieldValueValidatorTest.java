@@ -5,42 +5,27 @@
  */
 package edu.harvard.iq.dataverse;
 
+import java.util.Set;
 import java.util.regex.Pattern;
-import javax.validation.ConstraintValidatorContext;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import jakarta.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  *
  * @author skraffmi
  */
 public class DatasetFieldValueValidatorTest {
-    
-    
-    public DatasetFieldValueValidatorTest() {
-    }
-    
-    @BeforeClass
-    public static void setUpClass() {
-    }
-    
-    @AfterClass
-    public static void tearDownClass() {
-    }
-    
-    @Before
-    public void setUp() {
-    }
-    
-    @After
-    public void tearDown() {
-    }
-
 
     /**
      * Test of isValid method, of class DatasetFieldValueValidator.
@@ -67,121 +52,134 @@ public class DatasetFieldValueValidatorTest {
         //Make string too long - should fail.
         value.setValue("asdfgX");
         result = instance.isValid(value, ctx);
-        assertEquals(false, result);
+        assertFalse(result);
         
         //Make string too long - should fail.
         value.setValue("asdf");
         result = instance.isValid(value, ctx);
-        assertEquals(false, result);
+        assertFalse(result);
         
         //Now lets try Dates
         dft.setFieldType(DatasetFieldType.FieldType.DATE);   
         dft.setValidationFormat(null);
         value.setValue("1999AD");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result); 
+        assertTrue(result); 
         
         value.setValue("44BCE");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result); 
+        assertTrue(result); 
         
         value.setValue("2004-10-27");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result); 
+        assertTrue(result); 
         
         value.setValue("2002-08");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result);  
+        assertTrue(result);  
         
         value.setValue("[1999?]");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result); 
+        assertTrue(result); 
         
         value.setValue("Blergh");
         result = instance.isValid(value, ctx);
-        assertEquals(false, result);  
+        assertFalse(result);  
         
         //Float
         dft.setFieldType(DatasetFieldType.FieldType.FLOAT); 
         value.setValue("44");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result);
+        assertTrue(result);
         
         value.setValue("44 1/2");
         result = instance.isValid(value, ctx);
-        assertEquals(false, result);
+        assertFalse(result);
         
         //Integer
         dft.setFieldType(DatasetFieldType.FieldType.INT); 
         value.setValue("44");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result);
+        assertTrue(result);
         
         value.setValue("-44");
         result = instance.isValid(value, ctx);
-        assertEquals(true, result);
+        assertTrue(result);
         
         value.setValue("12.14");
         result = instance.isValid(value, ctx);
-        assertEquals(false, result);
+        assertFalse(result);
+    }
+
+    final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+    
+    @ParameterizedTest
+    @CsvSource(
+        {
+            "true, https://www.google.com",
+            "true, http://google.com",
+            "true, https://do-not-exist-123-123.com/",
+            "true, ftp://somesite.com",
+            "false, google.com",
+            "false, git@github.com:IQSS/dataverse.git"
+        }
+    )
+    public void testInvalidURL(boolean expected, String url) {
+        // given
+        String fieldName = "testField";
         
-        //URL
-        dft.setFieldType(DatasetFieldType.FieldType.URL); 
-        value.setValue("http://cnn.com");
-        result = instance.isValid(value, ctx);
-        assertEquals(true, result);
+        DatasetField field = new DatasetField();
+        field.setDatasetFieldType(new DatasetFieldType(fieldName, DatasetFieldType.FieldType.URL, false));
+        DatasetFieldValue sut = new DatasetFieldValue(field);
+        sut.setValue(url);
         
+        // when
+        Set<ConstraintViolation<DatasetFieldValue>> violations = validator.validate(sut);
         
-        value.setValue("espn.com");
-        result = instance.isValid(value, ctx);
-        assertEquals(false, result);
+        // then
+        assertEquals(expected, violations.size() < 1);
+        violations.stream().findFirst().ifPresent(c -> {
+            assertTrue(c.getMessage().startsWith(fieldName + " " + url + " "));
+            assertTrue(c.getMessage().contains("not"));
+            assertTrue(c.getMessage().contains("URL"));
+        });
+    }
+    
+    @Test
+    public void testInvalidEmail() {
+        // given
+        String fieldName = "testField";
+        String invalidMail = "myinvalidmail";
         
+        DatasetField field = new DatasetField();
+        field.setDatasetFieldType(new DatasetFieldType(fieldName, DatasetFieldType.FieldType.EMAIL, false));
+        DatasetFieldValue sut = new DatasetFieldValue(field);
+        sut.setValue(invalidMail);
+        
+        // when
+        Set<ConstraintViolation<DatasetFieldValue>> violations = validator.validate(sut);
+        
+        // then
+        assertTrue(violations.size() == 1);
+        violations.stream().findFirst().ifPresent(c -> {
+            assertTrue(c.getMessage().startsWith(fieldName + " " + invalidMail + " "));
+            assertTrue(c.getMessage().contains("not"));
+            assertTrue(c.getMessage().contains("email"));
+        });
     }
-
     @Test
-    public void testIsValidAuthorIdentifierOrcid() {
-        DatasetFieldValueValidator validator = new DatasetFieldValueValidator();
-        Pattern pattern = ExternalIdentifier.valueOf("ORCID").getPattern();
-        assertTrue(validator.isValidAuthorIdentifier("0000-0002-1825-0097", pattern));
-        // An "X" at the end of an ORCID is less common but still valid.
-        assertTrue(validator.isValidAuthorIdentifier("0000-0002-1694-233X", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("0000 0002 1825 0097", pattern));
-        assertFalse(validator.isValidAuthorIdentifier(" 0000-0002-1825-0097", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("0000-0002-1825-0097 ", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("junk", pattern));
-    }
+    public void testBoundingBoxValidity() {
+        // valid tests
+        assertTrue(DatasetFieldValueValidator.validateBoundingBox("-180", "180", "90", "-90"));
+        assertTrue(DatasetFieldValueValidator.validateBoundingBox("0", "0", "0", "0"));
 
-    @Test
-    public void testIsValidAuthorIdentifierIsni() {
-        DatasetFieldValueValidator validator = new DatasetFieldValueValidator();
-        Pattern pattern = ExternalIdentifier.valueOf("ISNI").getPattern();
-        assertTrue(validator.isValidAuthorIdentifier("0000000121032683", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("junk", pattern));
+        // invalid tests
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox("-180", null, "90", null));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox(null, "180", null, "90"));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox("-180", "180", "90", "junk"));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox("45", "40", "90", "0"));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox("360", "0", "90", "-90"));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox("", "", "", ""));
+        assertTrue(!DatasetFieldValueValidator.validateBoundingBox(null, null, null, null));
     }
-
-    @Test
-    public void testIsValidAuthorIdentifierLcna() {
-        DatasetFieldValueValidator validator = new DatasetFieldValueValidator();
-        Pattern pattern = ExternalIdentifier.valueOf("LCNA").getPattern();
-        assertTrue(validator.isValidAuthorIdentifier("n82058243", pattern));
-        assertTrue(validator.isValidAuthorIdentifier("foobar123", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("junk", pattern));
-    }
-
-    @Test
-    public void testIsValidAuthorIdentifierViaf() {
-        DatasetFieldValueValidator validator = new DatasetFieldValueValidator();
-        Pattern pattern = ExternalIdentifier.valueOf("VIAF").getPattern();
-        assertTrue(validator.isValidAuthorIdentifier("172389567", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("junk", pattern));
-    }
-
-    @Test
-    public void testIsValidAuthorIdentifierGnd() {
-        DatasetFieldValueValidator validator = new DatasetFieldValueValidator();
-        Pattern pattern = ExternalIdentifier.valueOf("GND").getPattern();
-        assertTrue(validator.isValidAuthorIdentifier("4079154-3", pattern));
-        assertFalse(validator.isValidAuthorIdentifier("junk", pattern));
-    }
-
 }

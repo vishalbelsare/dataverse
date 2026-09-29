@@ -7,19 +7,22 @@ package edu.harvard.iq.dataverse.makedatacount;
 
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetServiceBean;
+import edu.harvard.iq.dataverse.GlobalId;
+import edu.harvard.iq.dataverse.pidproviders.PidUtil;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import javax.ejb.EJB;
-import javax.ejb.EJBException;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonValue;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
+import jakarta.ejb.EJB;
+import jakarta.ejb.EJBException;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonValue;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 
 /**
  *
@@ -36,12 +39,13 @@ public class DatasetExternalCitationsServiceBean implements java.io.Serializable
     DatasetServiceBean datasetService;
 
   //Array of relationship types that are considered to be citations
-  static ArrayList<String> inboundRelationships = new ArrayList<String>( 
+  public static ArrayList<String> inboundRelationships = new ArrayList<String>( 
           Arrays.asList(
           "cites",
           "references",
-          "supplements"));
-  static ArrayList<String> outboundRelationships = new ArrayList<String>( 
+          "supplements",
+          "is-supplement-to"));
+  public static ArrayList<String> outboundRelationships = new ArrayList<String>( 
           Arrays.asList(
           "is-cited-by",
           "is-referenced-by",
@@ -59,12 +63,11 @@ public class DatasetExternalCitationsServiceBean implements java.io.Serializable
             if (inboundRelationships.contains(relationship)) {
                 Dataset localDs = null;
                 if (objectUri.contains("doi")) {
-                    String globalId = objectUri.replace("https://", "").replace("doi.org/", "doi:").toUpperCase().replace("DOI:", "doi:");
-                    localDs = datasetService.findByGlobalId(globalId);
+                    localDs = datasetService.findByGlobalId(objectUri);
                     exCit.setDataset(localDs);
                 }
                 exCit.setCitedByUrl(subjectUri);
-                
+
                 if (localDs != null && !exCit.getCitedByUrl().isEmpty()) {
                     datasetExternalCitations.add(exCit);
                 }
@@ -72,9 +75,9 @@ public class DatasetExternalCitationsServiceBean implements java.io.Serializable
             if (outboundRelationships.contains(relationship)) {
                 Dataset localDs = null;
                 if (subjectUri.contains("doi")) {
-                    String globalId = subjectUri.replace("https://", "").replace("doi.org/", "doi:").toUpperCase().replace("DOI:", "doi:");
-                    localDs = datasetService.findByGlobalId(globalId);
+                    localDs = datasetService.findByGlobalId(subjectUri);
                     exCit.setDataset(localDs);
+
                 }
                 exCit.setCitedByUrl(objectUri);
                 

@@ -7,14 +7,15 @@ package edu.harvard.iq.dataverse.userdata;
 
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.mydata.Pager;
-import edu.harvard.iq.dataverse.util.BundleUtil;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObjectBuilder;
+
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObjectBuilder;
 
 /**
  *
@@ -165,7 +166,7 @@ public class UserListResult {
            
         }
         
-        JsonObjectBuilder jsonOverallData = Json.createObjectBuilder();
+        JsonObjectBuilder jsonOverallData = JsonUtil.createObjectBuilder();
         jsonOverallData.add("userCount", pager.getNumResults())
                        .add("selectedPage", pager.getSelectedPageNumber())
                        .add("pagination", pager.asJsonObjectBuilder())
@@ -183,13 +184,13 @@ public class UserListResult {
         // No results..... Return count of 0 and empty array
         // -------------------------------------------------
         if ((userList==null)||(userList.isEmpty())){
-            return Json.createArrayBuilder(); // return an empty array
+            return JsonUtil.createArrayBuilder(); // return an empty array
         }
         
         // -------------------------------------------------
         // We have results, format them into a JSON object
         // -------------------------------------------------
-        JsonArrayBuilder jsonUserListArray = Json.createArrayBuilder();
+        JsonArrayBuilder jsonUserListArray = JsonUtil.createArrayBuilder();
 
         for (AuthenticatedUser oneUser : userList) {    
             jsonUserListArray.add(oneUser.toJson());
@@ -200,11 +201,11 @@ public class UserListResult {
     
     private JsonObjectBuilder getNoResultsJSON(){
         
-         return Json.createObjectBuilder()
+         return JsonUtil.createObjectBuilder()
                         .add("userCount", 0)
                         .add("selectedPage", 1)
                         .add("bundleStrings", AuthenticatedUser.getBundleStrings())
-                        .add("users", Json.createArrayBuilder()); // empty array
+                        .add("users", JsonUtil.createArrayBuilder()); // empty array
     }
     
    

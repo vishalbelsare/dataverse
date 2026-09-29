@@ -5,83 +5,83 @@ import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.GitHubOAuth2
 import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.GoogleOAuth2AP;
 import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.OrcidOAuth2AP;
 import edu.harvard.iq.dataverse.authorization.providers.shib.ShibAuthenticationProvider;
-import java.util.Arrays;
+import edu.harvard.iq.dataverse.util.SystemConfig;
 import java.util.Collection;
 import java.util.HashSet;
 
-import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 
-@RunWith(Enclosed.class)
 public class AuthUtilTest {
 
-    @RunWith(Parameterized.class)
-    public static class AuthUtilParamTests {
+    @Mock
+    private SystemConfig systemConfig;
 
-        @Parameters
-        public static Collection<String[]> data() {
-            return Arrays.asList(
-                    new String[][] {
-                        { null, null, null },
-                        { "Homer", "Homer", null },
-                        { "Simpson", null, "Simpson" },
-                        { "Homer Simpson", "Homer", "Simpson" },
-                        { "Homer Simpson", " Homer", "Simpson" }
-                    }
-                );
-        }
+    @BeforeEach
+    public void setUp() {
+        MockitoAnnotations.openMocks(this);
 
-        @Parameter
-        public String expectedDisplayName;
+        // Configure the mock SystemConfig
+        when(systemConfig.isSignupDisabledForRemoteAuthProvider(anyString())).thenReturn(false);
+        when(systemConfig.isSignupDisabledForRemoteAuthProvider("orcid")).thenReturn(true);
+    }
+    
+    @ParameterizedTest
+    @CsvSource(value = {
+        "NULL,NULL,NULL",
+        "Homer,Homer,NULL",
+        "Simpson,NULL,Simpson",
+        "Homer Simpson,Homer,Simpson",
+        "Homer Simpson,Homer,Simpson"
+    }, nullValues = "NULL")
+    void testGetDisplayName(String expectedDisplayName, String displayFirst, String displayLast) {
+        assertEquals(expectedDisplayName, AuthUtil.getDisplayName(displayFirst, displayLast));
+    }
+    
+    /**
+     * Test of isNonLocalLoginEnabled method, of class AuthUtil.
+     */
+    @Test
+    public void testIsNonLocalSignupEnabled() {
+        System.out.println("isNonLocalSignupEnabled");
+        
+        assertFalse(AuthUtil.isNonLocalSignupEnabled(null, systemConfig));
+        
+        Collection<AuthenticationProvider> shibOnly = new HashSet<>();
+        shibOnly.add(new ShibAuthenticationProvider());
+        assertTrue(AuthUtil.isNonLocalSignupEnabled(shibOnly, systemConfig));
+        
 
-        @Parameter(1)
-        public String displayFirst;
+        Collection<AuthenticationProvider> orcidOnly = new HashSet<>();
+        orcidOnly.add(new OrcidOAuth2AP(null, null, null));
+        assertFalse(AuthUtil.isNonLocalSignupEnabled(orcidOnly, systemConfig));
 
-        @Parameter(2)
-        public String displayLast;
-
-        @Test
-        public void testGetDisplayName() {
-            assertEquals(expectedDisplayName, AuthUtil.getDisplayName(displayFirst, displayLast));
-        }
+        Collection<AuthenticationProvider> manyNonLocal = new HashSet<>();
+        manyNonLocal.add(new ShibAuthenticationProvider());
+        manyNonLocal.add(new GitHubOAuth2AP(null, null));
+        manyNonLocal.add(new GoogleOAuth2AP(null, null));
+        manyNonLocal.add(new OrcidOAuth2AP(null, null, null));
+        assertTrue(AuthUtil.isNonLocalSignupEnabled(manyNonLocal, systemConfig));
+        
+        Collection<AuthenticationProvider> onlyBuiltin = new HashSet<>();
+        onlyBuiltin.add(new BuiltinAuthenticationProvider(null, null, null));
+        // only builtin provider
+        assertFalse(AuthUtil.isNonLocalSignupEnabled(onlyBuiltin, systemConfig));
     }
 
-    public static class AuthUtilNoParamTests {
-
-        /**
-         * Test of isNonLocalLoginEnabled method, of class AuthUtil.
-         */
-        @Test
-        public void testIsNonLocalLoginEnabled() {
-            System.out.println("isNonLocalLoginEnabled");
-
-            AuthUtil authUtil = new AuthUtil();
-
-            assertEquals(false, AuthUtil.isNonLocalLoginEnabled(null));
-
-            Collection<AuthenticationProvider> shibOnly = new HashSet<>();
-            shibOnly.add(new ShibAuthenticationProvider());
-            assertEquals(true, AuthUtil.isNonLocalLoginEnabled(shibOnly));
-
-            Collection<AuthenticationProvider> manyNonLocal = new HashSet<>();
-            manyNonLocal.add(new ShibAuthenticationProvider());
-            manyNonLocal.add(new GitHubOAuth2AP(null, null));
-            manyNonLocal.add(new GoogleOAuth2AP(null, null));
-            manyNonLocal.add(new OrcidOAuth2AP(null, null, null));
-            assertEquals(true, AuthUtil.isNonLocalLoginEnabled(manyNonLocal));
-
-            Collection<AuthenticationProvider> onlyBuiltin = new HashSet<>();
-            onlyBuiltin.add(new BuiltinAuthenticationProvider(null, null, null));
-            // only builtin provider
-            assertEquals(false, AuthUtil.isNonLocalLoginEnabled(onlyBuiltin));
-
-        }
+    @Test
+    public void testIsSignupDisabledForRemoteAuthProvider() {
+        assertTrue(systemConfig.isSignupDisabledForRemoteAuthProvider("orcid"));
+        assertFalse(systemConfig.isSignupDisabledForRemoteAuthProvider("github"));
+        assertFalse(systemConfig.isSignupDisabledForRemoteAuthProvider("google"));
     }
-
 }

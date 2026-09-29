@@ -92,17 +92,11 @@ public class DeleteDatasetVersionCommand extends AbstractVoidCommand {
                     PrivateUrlUser privateUrlUser = new PrivateUrlUser(doomed.getId());
                     List<RoleAssignment> roleAssignments = ctxt.roles().directRoleAssignments(privateUrlUser, doomed);
                     for (RoleAssignment roleAssignment : roleAssignments) {
-                        ctxt.roles().revoke(roleAssignment);
+                        ctxt.roles().revoke(roleAssignment, getRequest());
                     }
                 }
                 boolean doNormalSolrDocCleanUp = true;
-                try {
-                    ctxt.index().indexDataset(doomed, doNormalSolrDocCleanUp);
-                } catch (IOException | SolrServerException e) {
-                    String failureLogText = "Post delete version indexing failed. You can kickoff a re-index of this dataset with: \r\n curl http://localhost:8080/api/admin/index/datasets/" + doomed.getId().toString();
-                    failureLogText += "\r\n" + e.getLocalizedMessage();
-                    LoggingUtil.writeOnSuccessFailureLog(this, failureLogText, doomed);
-                }
+                ctxt.index().asyncIndexDataset(doomed, doNormalSolrDocCleanUp);
 
                 return;
             }

@@ -1,17 +1,16 @@
 package edu.harvard.iq.dataverse.api.errorhandlers;
 
-import edu.harvard.iq.dataverse.util.json.JsonPrinter;
-
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.ext.ExceptionMapper;
-import javax.ws.rs.ext.Provider;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.ExceptionMapper;
+import jakarta.ws.rs.ext.Provider;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -36,7 +35,7 @@ public class ConstraintViolationExceptionHandler implements ExceptionMapper<Cons
             .collect(Collectors.toList());
         
         return Response.status(Response.Status.BAD_REQUEST)
-                       .entity( Json.createObjectBuilder()
+                       .entity( JsonUtil.createObjectBuilder()
                            .add("status", "ERROR")
                            .add("code", Response.Status.BAD_REQUEST.getStatusCode())
                            .add("message", "JPA validation constraints failed persistence. See list of violations for details.")
@@ -53,10 +52,10 @@ public class ConstraintViolationExceptionHandler implements ExceptionMapper<Cons
     }
     
     private JsonArray toJsonArray(List<ValidationError> list) {
-        JsonArrayBuilder builder = Json.createArrayBuilder();
+        JsonArrayBuilder builder = JsonUtil.createArrayBuilder();
         list.stream()
             .forEach(error -> builder.add(
-                Json.createObjectBuilder()
+                JsonUtil.createObjectBuilder()
                     .add("path", error.getPath())
                     .add("message", error.getMessage())));
         return builder.build();

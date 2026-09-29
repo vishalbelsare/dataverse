@@ -1,22 +1,23 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.response.Response;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.response.Response;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.OK;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.OK;
 import org.hamcrest.Matchers;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class InvalidCharactersIT {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
     }
@@ -51,9 +52,9 @@ public class InvalidCharactersIT {
         String badCharacter = "(\f)"; // form feed (also \u000C)
 //        badCharacter = "{\u0002}"; // start of text, reported problem with exports.
 
-        JsonObjectBuilder jsonUpdateObject = Json.createObjectBuilder().add("fields",
-                Json.createArrayBuilder()
-                        .add(Json.createObjectBuilder()
+        JsonObjectBuilder jsonUpdateObject = JsonUtil.createObjectBuilder().add("fields",
+                JsonUtil.createArrayBuilder()
+                        .add(JsonUtil.createObjectBuilder()
                                 .add("typeName", "title")
                                 .add("value", "MyTitle " + badCharacter)
                         ));

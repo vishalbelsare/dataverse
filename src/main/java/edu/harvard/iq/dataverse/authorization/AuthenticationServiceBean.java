@@ -1,105 +1,103 @@
 package edu.harvard.iq.dataverse.authorization;
 
+import com.nimbusds.oauth2.sdk.ParseException;
+import com.nimbusds.oauth2.sdk.token.BearerAccessToken;
+import com.nimbusds.openid.connect.sdk.claims.UserInfo;
 import edu.harvard.iq.dataverse.DatasetVersionServiceBean;
 import edu.harvard.iq.dataverse.DvObjectServiceBean;
 import edu.harvard.iq.dataverse.GuestbookResponseServiceBean;
 import edu.harvard.iq.dataverse.RoleAssigneeServiceBean;
 import edu.harvard.iq.dataverse.UserNotificationServiceBean;
 import edu.harvard.iq.dataverse.UserServiceBean;
-import edu.harvard.iq.dataverse.authorization.providers.oauth2.oidc.OIDCAuthenticationProviderFactory;
+import edu.harvard.iq.dataverse.authorization.exceptions.AuthorizationException;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.OAuth2Exception;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.OAuth2UserRecord;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.impl.OrcidOAuth2AP;
+import edu.harvard.iq.dataverse.authorization.providers.oauth2.oidc.OIDCAuthProvider;
+import edu.harvard.iq.dataverse.authorization.providers.shib.ShibUtil;
 import edu.harvard.iq.dataverse.search.IndexServiceBean;
 import edu.harvard.iq.dataverse.actionlogging.ActionLogRecord;
 import edu.harvard.iq.dataverse.actionlogging.ActionLogServiceBean;
 import edu.harvard.iq.dataverse.authorization.exceptions.AuthenticationFailedException;
-import edu.harvard.iq.dataverse.authorization.exceptions.AuthenticationProviderFactoryNotFoundException;
-import edu.harvard.iq.dataverse.authorization.exceptions.AuthorizationSetupException;
 import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroup;
 import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroupServiceBean;
 import edu.harvard.iq.dataverse.authorization.providers.AuthenticationProviderFactory;
-import edu.harvard.iq.dataverse.authorization.providers.AuthenticationProviderRow;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
-import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProviderFactory;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUser;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUserServiceBean;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.PasswordEncryption;
 import edu.harvard.iq.dataverse.authorization.providers.oauth2.AbstractOAuth2AuthenticationProvider;
-import edu.harvard.iq.dataverse.authorization.providers.oauth2.OAuth2AuthenticationProviderFactory;
 import edu.harvard.iq.dataverse.authorization.providers.shib.ShibAuthenticationProvider;
-import edu.harvard.iq.dataverse.authorization.providers.shib.ShibAuthenticationProviderFactory;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.authorization.users.PrivateUrlUser;
+import edu.harvard.iq.dataverse.authorization.users.User;
 import edu.harvard.iq.dataverse.confirmemail.ConfirmEmailData;
 import edu.harvard.iq.dataverse.confirmemail.ConfirmEmailServiceBean;
-import edu.harvard.iq.dataverse.engine.command.impl.RevokeAllRolesCommand;
 import edu.harvard.iq.dataverse.passwordreset.PasswordResetData;
 import edu.harvard.iq.dataverse.passwordreset.PasswordResetServiceBean;
+import edu.harvard.iq.dataverse.privateurl.PrivateUrl;
+import edu.harvard.iq.dataverse.privateurl.PrivateUrlServiceBean;
 import edu.harvard.iq.dataverse.search.savedsearch.SavedSearchServiceBean;
+import edu.harvard.iq.dataverse.settings.FeatureFlags;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.validation.PasswordValidatorServiceBean;
 import edu.harvard.iq.dataverse.workflow.PendingWorkflowInvocation;
 import edu.harvard.iq.dataverse.workflows.WorkflowComment;
+
+import java.io.IOException;
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import javax.annotation.PostConstruct;
-import javax.ejb.EJB;
-import javax.ejb.EJBException;
-import javax.ejb.Stateless;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.NoResultException;
-import javax.persistence.NonUniqueResultException;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
-import javax.persistence.TypedQuery;
-import javax.validation.ConstraintViolation;
-import javax.validation.Validation;
-import javax.validation.Validator;
-import javax.validation.ValidatorFactory;
+
+import jakarta.ejb.EJB;
+import jakarta.ejb.EJBException;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
+import jakarta.persistence.NonUniqueResultException;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+import jakarta.persistence.TypedQuery;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 
 /**
  * AuthenticationService is for general authentication-related operations.
  * It's no longer responsible for registering and listing
  * AuthenticationProviders! A dedicated singleton has been created for that
- * purpose - AuthenticationProvidersRegistrationServiceBean - and all the 
- * related code has been moved there. 
- * 
+ * purpose - AuthenticationProvidersRegistrationServiceBean - and all the
+ * related code has been moved there.
+ *
  */
 @Named
 @Stateless
 public class AuthenticationServiceBean {
     private static final Logger logger = Logger.getLogger(AuthenticationServiceBean.class.getName());
-    
+
     @EJB
     AuthenticationProvidersRegistrationServiceBean authProvidersRegistrationService;
-    
+
     @EJB
     BuiltinUserServiceBean builtinUserServiceBean;
-    
+
     @EJB
     IndexServiceBean indexService;
-    
+
     @EJB
     protected ActionLogServiceBean actionLogSvc;
-    
+
     @EJB
     UserNotificationServiceBean userNotificationService;
 
     @EJB
     ConfirmEmailServiceBean confirmEmailService;
-    
+
     @EJB
     PasswordResetServiceBean passwordResetServiceBean;
 
@@ -108,37 +106,53 @@ public class AuthenticationServiceBean {
 
     @EJB
     PasswordValidatorServiceBean passwordValidatorService;
-    
+
     @EJB
     DvObjectServiceBean dvObjSvc;
-    
+
     @EJB
     RoleAssigneeServiceBean roleAssigneeSvc;
-    
+
     @EJB
     GuestbookResponseServiceBean gbRespSvc;
-    
+
     @EJB
     DatasetVersionServiceBean datasetVersionService;
-    
-    @EJB 
+
+    @EJB
     ExplicitGroupServiceBean explicitGroupService;
 
     @EJB
     SavedSearchServiceBean savedSearchService;
 
+    @EJB
+    PrivateUrlServiceBean privateUrlService;
+
     @PersistenceContext(unitName = "VDCNet-ejbPU")
-    private EntityManager em;
-        
-        
-    public AbstractOAuth2AuthenticationProvider getOAuth2Provider( String id ) {
+    EntityManager em;
+
+    public enum INTERVAL {
+        YEARS(Calendar.YEAR),
+        MONTHS(Calendar.MONTH),
+        MINUTES(Calendar.MINUTE);
+
+        private final int calendarField;
+        private INTERVAL(int calendarField) {
+            this.calendarField = calendarField;
+        }
+        public int get() {
+            return calendarField;
+        }
+    }
+
+    public AbstractOAuth2AuthenticationProvider getOAuth2Provider(String id) {
         return authProvidersRegistrationService.getOAuth2AuthProvidersMap().get(id);
     }
-    
+
     public Set<AbstractOAuth2AuthenticationProvider> getOAuth2Providers() {
         return new HashSet<>(authProvidersRegistrationService.getOAuth2AuthProvidersMap().values());
     }
-    
+
     public Set<String> getAuthenticationProviderIds() {
         return authProvidersRegistrationService.getAuthenticationProvidersMap().keySet();
     }
@@ -146,57 +160,57 @@ public class AuthenticationServiceBean {
     public Collection<AuthenticationProvider> getAuthenticationProviders() {
         return authProvidersRegistrationService.getAuthenticationProvidersMap().values();
     }
-    
-    public <T extends AuthenticationProvider> Set<String> getAuthenticationProviderIdsOfType( Class<T> aClass ) {
+
+    public <T extends AuthenticationProvider> Set<String> getAuthenticationProviderIdsOfType(Class<T> aClass) {
         Set<String> retVal = new TreeSet<>();
-        for ( Map.Entry<String, AuthenticationProvider> p : authProvidersRegistrationService.getAuthenticationProvidersMap().entrySet() ) {
-            if ( aClass.isAssignableFrom( p.getValue().getClass() ) ) {
-                retVal.add( p.getKey() );
+        for (Map.Entry<String, AuthenticationProvider> p : authProvidersRegistrationService.getAuthenticationProvidersMap().entrySet()) {
+            if (aClass.isAssignableFrom(p.getValue().getClass())) {
+                retVal.add(p.getKey());
             }
         }
         return retVal;
     }
-    
-    public AuthenticationProviderFactory getProviderFactory( String alias ) {
+
+    public AuthenticationProviderFactory getProviderFactory(String alias) {
         return authProvidersRegistrationService.getProviderFactoriesMap().get(alias);
     }
-    
-    public AuthenticationProvider getAuthenticationProvider( String id ) {
-        return authProvidersRegistrationService.getAuthenticationProvidersMap().get( id );
+
+    public AuthenticationProvider getAuthenticationProvider(String id) {
+        return authProvidersRegistrationService.getAuthenticationProvidersMap().get(id);
     }
-    
-    public AuthenticatedUser findByID(Object pk){
-        if (pk==null){
+
+    public AuthenticatedUser findByID(Object pk) {
+        if (pk == null) {
             return null;
         }
         return em.find(AuthenticatedUser.class, pk);
     }
 
-    public void removeApiToken(AuthenticatedUser user){
-        if (user!=null) {
+    public void removeApiToken(AuthenticatedUser user) {
+        if (user != null) {
             ApiToken apiToken = findApiTokenByUser(user);
             if (apiToken != null) {
                 em.remove(apiToken);
             }
         }
     }
-    
+
     public boolean isOrcidEnabled() {
-        return authProvidersRegistrationService.getOAuth2AuthProvidersMap().values().stream().anyMatch( s -> s.getId().toLowerCase().contains("orcid") );
+        return authProvidersRegistrationService.getOAuth2AuthProvidersMap().values().stream().anyMatch(s -> s.getId().toLowerCase().contains("orcid"));
     }
-    
+
     /**
      * Use with care! This method was written primarily for developers
      * interested in API testing who want to:
-     * 
+     * <p>
      * 1. Create a temporary user and get an API token.
-     * 
+     * <p>
      * 2. Do some work with that API token.
-     * 
+     * <p>
      * 3. Delete all the stuff that was created with the API token.
-     * 
+     * <p>
      * 4. Delete the temporary user.
-     * 
+     * <p>
      * Before calling this method, make sure you've deleted all the stuff tied
      * to the user, including stuff they've created, role assignments, group
      * assignments, etc. See the "removeAuthentictedUserItems" (sic) method.
@@ -218,46 +232,50 @@ public class AuthenticationServiceBean {
                 em.remove(confirmEmailData);
             }
             userNotificationService.findByUser(user.getId()).forEach(userNotificationService::delete);
-            
+
             AuthenticationProvider prv = lookupProvider(user);
-            if ( prv != null && prv.isUserDeletionAllowed() ) {
+            if (prv != null && prv.isUserDeletionAllowed()) {
                 prv.deleteUser(user.getAuthenticatedUserLookup().getPersistentUserId());
             }
-            
-            actionLogSvc.log( new ActionLogRecord(ActionLogRecord.ActionType.Auth, "deleteUser")
-                .setInfo(user.getUserIdentifier()));
-            em.remove(user.getAuthenticatedUserLookup());         
+
+            actionLogSvc.log(new ActionLogRecord(ActionLogRecord.ActionType.Auth, "deleteUser")
+                    .setInfo(user.getUserIdentifier()));
+            em.remove(user.getAuthenticatedUserLookup());
             em.remove(user);
 
         }
     }
-            
-    public AuthenticatedUser getAuthenticatedUser( String identifier ) {
+
+    public AuthenticatedUser getAuthenticatedUser(String identifier) {
         try {
             return em.createNamedQuery("AuthenticatedUser.findByIdentifier", AuthenticatedUser.class)
                     .setParameter("identifier", identifier)
                     .getSingleResult();
-        } catch ( NoResultException nre ) {
+        } catch (NoResultException nre) {
             return null;
         }
     }
-    
-    public AuthenticatedUser getAuthenticatedUserWithProvider( String identifier ) {
+
+    public AuthenticatedUser getAuthenticatedUserWithProvider(String identifier) {
         try {
             AuthenticatedUser authenticatedUser = em.createNamedQuery("AuthenticatedUser.findByIdentifier", AuthenticatedUser.class)
                     .setParameter("identifier", identifier)
                     .getSingleResult();
-            AuthenticatedUserLookup aul = em.createNamedQuery("AuthenticatedUserLookup.findByAuthUser", AuthenticatedUserLookup.class)
-                    .setParameter("authUser", authenticatedUser)
-                    .getSingleResult();
-            authenticatedUser.setAuthProviderId(aul.getAuthenticationProviderId());
-            
+
+            if (authenticatedUser != null) {
+                AuthenticatedUserLookup aul = em.createNamedQuery("AuthenticatedUserLookup.findByAuthUser", AuthenticatedUserLookup.class)
+                        .setParameter("authUser", authenticatedUser)
+                        .getSingleResult();
+
+                authenticatedUser.setAuthProviderId(aul.getAuthenticationProviderId());
+            }
+
             return authenticatedUser;
-        } catch ( NoResultException nre ) {
+        } catch (NoResultException nre) {
             return null;
         }
     }
-    
+
     public AuthenticatedUser getAdminUser() {
         try {
             return em.createNamedQuery("AuthenticatedUser.findAdminUser", AuthenticatedUser.class)
@@ -268,15 +286,15 @@ public class AuthenticationServiceBean {
         }
     }
 
-    public AuthenticatedUser getAuthenticatedUserByEmail( String email ) {
+    public AuthenticatedUser getAuthenticatedUserByEmail(String email) {
         try {
             return em.createNamedQuery("AuthenticatedUser.findByEmail", AuthenticatedUser.class)
                     .setParameter("email", email)
                     .getSingleResult();
-        } catch ( NoResultException ex ) {
+        } catch (NoResultException ex) {
             logger.log(Level.INFO, "no user found using {0}", email);
             return null;
-        } catch ( NonUniqueResultException ex ) {
+        } catch (NonUniqueResultException ex) {
             logger.log(Level.INFO, "multiple users found using {0}: {1}", new Object[]{email, ex});
             return null;
         }
@@ -284,36 +302,35 @@ public class AuthenticationServiceBean {
 
     /**
      * Returns an {@link AuthenticatedUser} matching the passed provider id and the authentication request. If
-     *  no such user exist, it is created and then returned.
-     * 
-     * <strong>Invariant:</strong> upon successful return from this call, an {@link AuthenticatedUser} record 
+     * no such user exist, it is created and then returned.
+     *
+     * <strong>Invariant:</strong> upon successful return from this call, an {@link AuthenticatedUser} record
      * matching the request and provider exists in the database.
-     * 
+     *
      * @param authenticationProviderId
      * @param req
      * @return The authenticated user for the passed provider id and authentication request.
-     * @throws AuthenticationFailedException 
+     * @throws AuthenticationFailedException
      */
-    public AuthenticatedUser getUpdateAuthenticatedUser( String authenticationProviderId, AuthenticationRequest req ) throws AuthenticationFailedException {
+    public AuthenticatedUser getUpdateAuthenticatedUser(String authenticationProviderId, AuthenticationRequest req) throws AuthenticationFailedException {
         AuthenticationProvider prv = getAuthenticationProvider(authenticationProviderId);
-        if ( prv == null ) throw new IllegalArgumentException("No authentication provider listed under id " + authenticationProviderId );
-        if ( ! (prv instanceof CredentialsAuthenticationProvider) ) {
-            throw new IllegalArgumentException( authenticationProviderId + " does not support credentials-based authentication." );
+        if (prv == null)
+            throw new IllegalArgumentException("No authentication provider listed under id " + authenticationProviderId);
+        if (!(prv instanceof CredentialsAuthenticationProvider)) {
+            throw new IllegalArgumentException(authenticationProviderId + " does not support credentials-based authentication.");
         }
-        AuthenticationResponse resp = ((CredentialsAuthenticationProvider)prv).authenticate(req);
-        
-        if ( resp.getStatus() == AuthenticationResponse.Status.SUCCESS ) {
+        AuthenticationResponse resp = ((CredentialsAuthenticationProvider) prv).authenticate(req);
+
+        if (resp.getStatus() == AuthenticationResponse.Status.SUCCESS) {
             // yay! see if we already have this user.
             AuthenticatedUser user = lookupUser(authenticationProviderId, resp.getUserId());
 
             if (user != null && !user.isDeactivated()) {
                 user = userService.updateLastLogin(user);
             }
-            
-            if ( user == null ) {
+
+            if (user == null) {
                 throw new IllegalStateException("Authenticated user does not exist. The functionality to support creating one at this point in authentication has been removed.");
-                //return createAuthenticatedUser(
-                //        new UserRecordIdentifier(authenticationProviderId, resp.getUserId()), resp.getUserId(), resp.getUserDisplayInfo(), true );
             } else {
                 if (BuiltinAuthenticationProvider.PROVIDER_ID.equals(user.getAuthenticatedUserLookup().getAuthenticationProviderId())) {
                     return user;
@@ -321,25 +338,25 @@ public class AuthenticationServiceBean {
                     return updateAuthenticatedUser(user, resp.getUserDisplayInfo());
                 }
             }
-        } else { 
+        } else {
             throw new AuthenticationFailedException(resp, "Authentication Failed: " + resp.getMessage());
         }
     }
-    
+
     /**
      * @param email
      * @return {@code true} iff the none of the authenticated users has the passed email address.
      */
     public boolean isEmailAddressAvailable(String email) {
         return em.createNamedQuery("AuthenticatedUser.findByEmail", AuthenticatedUser.class)
-                 .setParameter("email", email)
-                 .getResultList().isEmpty();
+                .setParameter("email", email)
+                .getResultList().isEmpty();
     }
-    
+
     public AuthenticatedUser lookupUser(UserRecordIdentifier id) {
         return lookupUser(id.repoId, id.userIdInRepo);
     }
-    
+
     public AuthenticatedUser lookupUser(String authPrvId, String userPersistentId) {
         TypedQuery<AuthenticatedUserLookup> typedQuery = em.createNamedQuery("AuthenticatedUserLookup.findByAuthPrvID_PersUserId", AuthenticatedUserLookup.class);
         typedQuery.setParameter("authPrvId", authPrvId);
@@ -351,11 +368,11 @@ public class AuthenticationServiceBean {
             return null;
         }
     }
-    
-    public AuthenticationProvider lookupProvider( AuthenticatedUser user )  {
+
+    public AuthenticationProvider lookupProvider(AuthenticatedUser user) {
         return authProvidersRegistrationService.getAuthenticationProvidersMap().get(user.getAuthenticatedUserLookup().getAuthenticationProviderId());
     }
-    
+
     public ApiToken findApiToken(String token) {
         try {
             return em.createNamedQuery("ApiToken.findByTokenString", ApiToken.class)
@@ -365,7 +382,7 @@ public class AuthenticationServiceBean {
             return null;
         }
     }
-    
+
     public ApiToken findApiTokenByUser(AuthenticatedUser au) {
         if (au == null) {
             return null;
@@ -401,14 +418,18 @@ public class AuthenticationServiceBean {
             return newestToken;
         }
     }
-    
-    
+
+
     // A method for generating a new API token;
     // TODO: this is a simple, one-size-fits-all solution; we'll need
     // to expand this system, to be able to generate tokens with different
     // lifecycles/valid for specific actions only, etc. 
     // -- L.A. 4.0 beta12
     public ApiToken generateApiTokenForUser(AuthenticatedUser au) {
+        return generateApiTokenForUser(au, INTERVAL.YEARS, 1);
+    }
+
+    public ApiToken generateApiTokenForUser(AuthenticatedUser au, INTERVAL expirePeriod, int expireOffset) {
         if (au == null) {
             return null;
         }
@@ -418,28 +439,28 @@ public class AuthenticationServiceBean {
         apiToken.setAuthenticatedUser(au);
         Calendar c = Calendar.getInstance();
         apiToken.setCreateTime(new Timestamp(c.getTimeInMillis()));
-        c.roll(Calendar.YEAR, 1);
+        c.roll(expirePeriod.get(), expireOffset);
         apiToken.setExpireTime(new Timestamp(c.getTimeInMillis()));
         save(apiToken);
-        actionLogSvc.log( new ActionLogRecord(ActionLogRecord.ActionType.Auth, "generateApiToken")
-            .setInfo("user:" + au.getIdentifier() + " token:" +  apiToken.getTokenString()));
+        actionLogSvc.log(new ActionLogRecord(ActionLogRecord.ActionType.Auth, "generateApiToken")
+                .setInfo("user:" + au.getIdentifier() + " token:" + apiToken.getTokenString()));
 
         return apiToken;
     }
 
-    public AuthenticatedUser lookupUser( String apiToken ) {
+    public AuthenticatedUser lookupUser(String apiToken) {
         ApiToken tkn = findApiToken(apiToken);
-        if ( tkn == null ) return null;
-        
-        if ( tkn.isDisabled() ) return null;
-        if ( tkn.getExpireTime() != null ) {
-            if ( tkn.getExpireTime().before( new Timestamp(new Date().getTime())) ) {
+        if (tkn == null) return null;
+
+        if (tkn.isDisabled()) return null;
+        if (tkn.getExpireTime() != null) {
+            if (tkn.getExpireTime().before(new Timestamp(new Date().getTime()))) {
                 em.remove(tkn);
-		logger.info("attempted access with expired token: " + apiToken);
+                logger.info("attempted access with expired token: " + apiToken);
                 return null;
             }
         }
-        
+
         AuthenticatedUser user = tkn.getAuthenticatedUser();
         if (!user.isDeactivated()) {
             return user;
@@ -448,7 +469,7 @@ public class AuthenticationServiceBean {
             return null;
         }
     }
-    
+
     public AuthenticatedUser lookupUserForWorkflowInvocationID(String wfId) {
         try {
             PendingWorkflowInvocation pwfi = em.find(PendingWorkflowInvocation.class, wfId);
@@ -477,10 +498,10 @@ public class AuthenticationServiceBean {
 
     An empty string is returned if the user is 'deletable'
     */
-    
+
     public String getDeleteUserErrorMessages(AuthenticatedUser au) {
         String retVal = "";
-        List<String> reasons= new ArrayList();
+        List<String> reasons = new ArrayList();
         if (!dvObjSvc.findByAuthenticatedUserId(au).isEmpty()) {
             reasons.add(BundleUtil.getStringFromBundle("admin.api.deleteUser.failure.dvobjects"));
         }
@@ -490,7 +511,7 @@ public class AuthenticationServiceBean {
         }
 
         if (!gbRespSvc.findByAuthenticatedUserId(au).isEmpty()) {
-            reasons.add( BundleUtil.getStringFromBundle("admin.api.deleteUser.failure.gbResps"));
+            reasons.add(BundleUtil.getStringFromBundle("admin.api.deleteUser.failure.gbResps"));
         }
 
         if (!datasetVersionService.getDatasetVersionUsersByAuthenticatedUser(au).isEmpty()) {
@@ -500,85 +521,85 @@ public class AuthenticationServiceBean {
         if (!savedSearchService.findByAuthenticatedUser(au).isEmpty()) {
             reasons.add(BundleUtil.getStringFromBundle("admin.api.deleteUser.failure.savedSearches"));
         }
-        
+
         if (!reasons.isEmpty()) {
             retVal = BundleUtil.getStringFromBundle("admin.api.deleteUser.failure.prefix", Arrays.asList(au.getIdentifier()));
             retVal += " " + reasons.stream().collect(Collectors.joining("; ")) + ".";
         }
-        
 
 
         return retVal;
     }
-    
-    public void removeAuthentictedUserItems(AuthenticatedUser au){
+
+    public void removeAuthentictedUserItems(AuthenticatedUser au) {
         /* if the user has pending access requests, is the member of a group or 
         we will delete them here 
         */
 
         deletePendingAccessRequests(au);
-        
+
         deleteBannerMessages(au);
-               
+
         if (!explicitGroupService.findGroups(au).isEmpty()) {
-            for(ExplicitGroup explicitGroup: explicitGroupService.findGroups(au)){
+            for (ExplicitGroup explicitGroup : explicitGroupService.findGroups(au)) {
                 explicitGroup.removeByRoleAssgineeIdentifier(au.getIdentifier());
-            }            
+            }
         }
-        
+
     }
-    
-    private void deleteBannerMessages(AuthenticatedUser  au){
-        
-       em.createNativeQuery("delete from userbannermessage where user_id  = "+au.getId()).executeUpdate();
-        
+
+    private void deleteBannerMessages(AuthenticatedUser au) {
+
+        em.createNativeQuery("delete from userbannermessage where user_id  = " + au.getId()).executeUpdate();
+
     }
-    
-    private void deletePendingAccessRequests(AuthenticatedUser  au){
-        
-       em.createNativeQuery("delete from fileaccessrequests where authenticated_user_id  = "+au.getId()).executeUpdate();
-        
+
+    private void deletePendingAccessRequests(AuthenticatedUser au) {
+
+        em.createNativeQuery("delete from fileaccessrequests where authenticated_user_id  = " + au.getId()).executeUpdate();
+
     }
-    
-    public AuthenticatedUser save( AuthenticatedUser user ) {
+
+    public AuthenticatedUser save(AuthenticatedUser user) {
         em.persist(user);
         em.flush();
         return user;
     }
-    
-    public AuthenticatedUser update( AuthenticatedUser user ) {
+
+    public AuthenticatedUser update(AuthenticatedUser user) {
         return em.merge(user);
     }
-    
-    public ApiToken save( ApiToken aToken ) {
-        if ( aToken.getId() == null ) {
+
+    public ApiToken save(ApiToken aToken) {
+        if (aToken.getId() == null) {
             em.persist(aToken);
             return aToken;
-        } else { 
-            return em.merge( aToken );
-            
+        } else {
+            return em.merge(aToken);
+
         }
     }
-    
+
     /**
      * Associates the passed {@link AuthenticatedUser} with a new provider.
-     * @param authenticatedUser the authenticated being re-associated
+     *
+     * @param authenticatedUser        the authenticated being re-associated
      * @param authenticationProviderId Id of the new provider
-     * @param persistentIdInProvider Id of the user in the new provider
+     * @param persistentIdInProvider   Id of the user in the new provider
      * @return {@code true} iff the change was successful.
      */
-    public boolean updateProvider( AuthenticatedUser authenticatedUser, String authenticationProviderId, String persistentIdInProvider ) {
+    public boolean updateProvider(AuthenticatedUser authenticatedUser, String authenticationProviderId, String persistentIdInProvider) {
         try {
             AuthenticatedUserLookup aul = em.createNamedQuery("AuthenticatedUserLookup.findByAuthUser", AuthenticatedUserLookup.class)
                     .setParameter("authUser", authenticatedUser)
                     .getSingleResult();
             aul.setAuthenticationProviderId(authenticationProviderId);
             aul.setPersistentUserId(persistentIdInProvider);
-            actionLogSvc.log( new ActionLogRecord(ActionLogRecord.ActionType.Auth,
-                    authenticatedUser.getIdentifier() + " now associated with provider " + authenticationProviderId + " id: " + persistentIdInProvider) );
+            actionLogSvc.log(new ActionLogRecord(ActionLogRecord.ActionType.Auth,
+                    authenticatedUser.getIdentifier() + " now associated with provider " + authenticationProviderId + " id: " + persistentIdInProvider));
             return true;
-            
-        } catch ( NoResultException | NonUniqueResultException ex ) {
+
+        } catch (NoResultException | NonUniqueResultException ex) {
             logger.log(Level.WARNING, "Error converting user " + authenticatedUser.getUserIdentifier() + ": " + ex.getMessage(), ex);
             return false;
         }
@@ -589,24 +610,24 @@ public class AuthenticationServiceBean {
      * {@code userDisplayInfo}, a lookup entry for them based
      * UserIdentifier.getLookupStringPerAuthProvider (within the supplied
      * authentication provider), and internal user identifier (used for role
-     * assignments, etc.) based on UserIdentifier.getInternalUserIdentifer.
+     * assignments, etc.) based on UserIdentifier.getInternalUserIdentifier.
      *
      * @param userRecordId
      * @param proposedAuthenticatedUserIdentifier
      * @param userDisplayInfo
-     * @param generateUniqueIdentifier if {@code true}, create a new, unique user identifier for the created user, if the suggested one exists.
+     * @param generateUniqueIdentifier            if {@code true}, create a new, unique user identifier for the created user, if the suggested one exists.
      * @return the newly created user, or {@code null} if the proposed identifier exists and {@code generateUniqueIdentifier} was {@code false}.
      * @throws EJBException which may wrap an ConstraintViolationException if the proposed user does not pass bean validation.
      */
     public AuthenticatedUser createAuthenticatedUser(UserRecordIdentifier userRecordId,
-            String proposedAuthenticatedUserIdentifier,
-            AuthenticatedUserDisplayInfo userDisplayInfo,
-            boolean generateUniqueIdentifier) {
+                                                     String proposedAuthenticatedUserIdentifier,
+                                                     AuthenticatedUserDisplayInfo userDisplayInfo,
+                                                     boolean generateUniqueIdentifier) {
         AuthenticatedUser authenticatedUser = new AuthenticatedUser();
         // set account creation time & initial login time (same timestamp)
         authenticatedUser.setCreatedTime(new Timestamp(new Date().getTime()));
         authenticatedUser.setLastLoginTime(authenticatedUser.getCreatedTime());
-        
+
         authenticatedUser.applyDisplayInfo(userDisplayInfo);
 
         // we have no desire for leading or trailing whitespace in identifiers
@@ -614,62 +635,66 @@ public class AuthenticationServiceBean {
             proposedAuthenticatedUserIdentifier = proposedAuthenticatedUserIdentifier.trim();
         }
         // we now select a username for the generated AuthenticatedUser, or give up
-        String internalUserIdentifer = proposedAuthenticatedUserIdentifier;
+        String internalUserIdentifier = proposedAuthenticatedUserIdentifier;
         // TODO should lock table authenticated users for write here
-        if ( identifierExists(internalUserIdentifer) ) {
-            if ( ! generateUniqueIdentifier ) {
+        if (identifierExists(internalUserIdentifier)) {
+            if (!generateUniqueIdentifier) {
                 return null;
             }
-            int i=1;
-            String identifier = internalUserIdentifer + i;
-            while ( identifierExists(identifier) ) {
+            int i = 1;
+            String identifier = internalUserIdentifier + i;
+            while (identifierExists(identifier)) {
                 i += 1;
+                identifier = internalUserIdentifier + i;
             }
             authenticatedUser.setUserIdentifier(identifier);
         } else {
-            authenticatedUser.setUserIdentifier(internalUserIdentifer);
+            authenticatedUser.setUserIdentifier(internalUserIdentifier);
         }
-        authenticatedUser = save( authenticatedUser );
+        authenticatedUser = save(authenticatedUser);
         // TODO should unlock table authenticated users for write here
         AuthenticatedUserLookup auusLookup = userRecordId.createAuthenticatedUserLookup(authenticatedUser);
-        em.persist( auusLookup );
+        em.persist(auusLookup);
         authenticatedUser.setAuthenticatedUserLookup(auusLookup);
 
         if (ShibAuthenticationProvider.PROVIDER_ID.equals(auusLookup.getAuthenticationProviderId())) {
-            Timestamp emailConfirmedNow = new Timestamp(new Date().getTime());
             // Email addresses for Shib users are confirmed by the Identity Provider.
-            authenticatedUser.setEmailConfirmed(emailConfirmedNow);
+            authenticatedUser.updateEmailConfirmedToNow();
             authenticatedUser = save(authenticatedUser);
         } else {
             /* @todo Rather than creating a token directly here it might be
              * better to do something like "startConfirmEmailProcessForNewUser". */
             confirmEmailService.createToken(authenticatedUser);
         }
-        
-        actionLogSvc.log( new ActionLogRecord(ActionLogRecord.ActionType.Auth, "createUser")
-            .setInfo(authenticatedUser.getIdentifier()));
+
+        actionLogSvc.log(new ActionLogRecord(ActionLogRecord.ActionType.Auth, "createUser")
+                .setInfo(authenticatedUser.getIdentifier()));
+
+        authenticatedUser.initialize();
 
         return authenticatedUser;
     }
-    
+
     /**
      * Checks whether the {@code idtf} is already taken by another {@link AuthenticatedUser}.
+     *
      * @param idtf
      * @return {@code true} iff there's already a user by that username.
      */
-    public boolean identifierExists( String idtf ) {
+    public boolean identifierExists(String idtf) {
         return em.createNamedQuery("AuthenticatedUser.countOfIdentifier", Number.class)
                 .setParameter("identifier", idtf)
                 .getSingleResult().intValue() > 0;
     }
-    
+
     public AuthenticatedUser updateAuthenticatedUser(AuthenticatedUser user, AuthenticatedUserDisplayInfo userDisplayInfo) {
         user.applyDisplayInfo(userDisplayInfo);
-        actionLogSvc.log( new ActionLogRecord(ActionLogRecord.ActionType.Auth, "updateUser")
-            .setInfo(user.getIdentifier()));
+        user.updateEmailConfirmedToNow();
+        actionLogSvc.log(new ActionLogRecord(ActionLogRecord.ActionType.Auth, "updateUser")
+                .setInfo(user.getIdentifier()));
         return update(user);
     }
-    
+
     public List<AuthenticatedUser> findAllAuthenticatedUsers() {
         return em.createNamedQuery("AuthenticatedUser.findAll", AuthenticatedUser.class).getResultList();
     }
@@ -677,12 +702,12 @@ public class AuthenticationServiceBean {
     public List<AuthenticatedUser> findSuperUsers() {
         return em.createNamedQuery("AuthenticatedUser.findSuperUsers", AuthenticatedUser.class).getResultList();
     }
-    
-    
+
+
     public Set<AuthenticationProviderFactory> listProviderFactories() {
-        return new HashSet<>( authProvidersRegistrationService.getProviderFactoriesMap().values() ); 
+        return new HashSet<>(authProvidersRegistrationService.getProviderFactoriesMap().values());
     }
-    
+
     public Timestamp getCurrentTimestamp() {
         return new Timestamp(new Date().getTime());
     }
@@ -794,12 +819,12 @@ public class AuthenticationServiceBean {
 
     /**
      * @param idOfAuthUserToConvert The id of the remote AuthenticatedUser
-     * (Shibboleth user or OAuth user) to convert to a BuiltinUser.
-     * @param newEmailAddress The new email address that will be used instead of
-     * the user's old email address from the institution that they have left.
+     *                              (Shibboleth user or OAuth user) to convert to a BuiltinUser.
+     * @param newEmailAddress       The new email address that will be used instead of
+     *                              the user's old email address from the institution that they have left.
      * @return BuiltinUser
      * @throws java.lang.Exception You must catch and report back to the user (a
-     * superuser) any Exceptions.
+     *                             superuser) any Exceptions.
      */
     public BuiltinUser convertRemoteToBuiltIn(Long idOfAuthUserToConvert, String newEmailAddress) throws Exception {
         AuthenticatedUser authenticatedUser = findByID(idOfAuthUserToConvert);
@@ -931,11 +956,166 @@ public class AuthenticationServiceBean {
             return null;
         }
     }
-    
-    public List <WorkflowComment> getWorkflowCommentsByAuthenticatedUser(AuthenticatedUser user){ 
+
+    public List<WorkflowComment> getWorkflowCommentsByAuthenticatedUser(AuthenticatedUser user) {
         Query query = em.createQuery("SELECT wc FROM WorkflowComment wc WHERE wc.authenticatedUser.id = :auid");
-        query.setParameter("auid", user.getId());       
+        query.setParameter("auid", user.getId());
         return query.getResultList();
     }
 
+    /**
+     * This method gets a valid api token for an AuthenticatedUser, creating a new
+     * token if one doesn't exist or if the token is expired.
+     *
+     * @param user
+     * @return
+     */
+    public ApiToken getValidApiTokenForAuthenticatedUser(AuthenticatedUser user) {
+        ApiToken apiToken = null;
+        apiToken = findApiTokenByUser(user);
+        if ((apiToken == null) || apiToken.isExpired()) {
+            logger.fine("Created apiToken for user: " + user.getIdentifier());
+            apiToken = generateApiTokenForUser(user);
+        }
+        return apiToken;
+    }
+
+    /**
+     * Gets a token for an AuthenticatedUser or a PrivateUrlUser. It will create a
+     * new token if needed for an AuthenticatedUser. Note that, for a PrivateUrlUser, this method creates a token
+     * with a temporary AuthenticateUser that only has a userIdentifier - needed in generating signed Urls.
+     *
+     * @param user
+     * @return a token or null (i.e. if the user is not an AuthenticatedUser or PrivateUrlUser)
+     */
+
+    public ApiToken getValidApiTokenForUser(User user) {
+        ApiToken apiToken = null;
+        if (user instanceof AuthenticatedUser) {
+            apiToken = getValidApiTokenForAuthenticatedUser((AuthenticatedUser) user);
+        } else if (user instanceof PrivateUrlUser) {
+            PrivateUrlUser privateUrlUser = (PrivateUrlUser) user;
+
+            PrivateUrl privateUrl = privateUrlService.getPrivateUrlFromDatasetId(privateUrlUser.getDatasetId());
+            apiToken = new ApiToken();
+            apiToken.setTokenString(privateUrl.getToken());
+            AuthenticatedUser au = new AuthenticatedUser();
+            au.setUserIdentifier(privateUrlUser.getIdentifier());
+            apiToken.setAuthenticatedUser(au);
+        }
+        return apiToken;
+    }
+
+    /**
+     * Looks up an authenticated user based on the provided OIDC bearer token.
+     *
+     * @param bearerToken The OIDC bearer token.
+     * @return An instance of {@link AuthenticatedUser} representing the authenticated user.
+     * @throws AuthorizationException If the token is invalid or no OIDC provider is configured.
+     */
+    public AuthenticatedUser lookupUserByOIDCBearerToken(String bearerToken) throws AuthorizationException {
+        // TODO: Get the identifier from an invalidating cache to avoid lookup bursts of the same token.
+        // Tokens in the cache should be removed after some (configurable) time.
+        OAuth2UserRecord oAuth2UserRecord = verifyOIDCBearerTokenAndGetOAuth2UserRecord(bearerToken);
+        AuthenticatedUser authenticatedUser;
+        if (FeatureFlags.API_BEARER_AUTH_USE_SHIB_USER_ON_ID_MATCH.enabled() && oAuth2UserRecord.hasShibAttributes()) {
+            logger.log(Level.FINE, "OAuth2UserRecord has Shibboleth attributes");
+            String userPersistentId = ShibUtil.createUserPersistentIdentifier(oAuth2UserRecord.getIdp(), oAuth2UserRecord.getShibUniquePersistentIdentifier());
+            authenticatedUser = lookupUser(ShibAuthenticationProvider.PROVIDER_ID, userPersistentId);
+            if (authenticatedUser != null) {
+                logger.log(Level.FINE, "Shibboleth user found for the given bearer token");
+                return authenticatedUser;
+            }
+        } else if (FeatureFlags.API_BEARER_AUTH_USE_OAUTH_USER_ON_ID_MATCH.enabled() && oAuth2UserRecord.hasOAuthAttributes()) {
+            OAuthUserLookupParams userLookupParams = OAuthUserLookupParamsFactory.getOAuthUserLookupParams(oAuth2UserRecord.getIdp(), oAuth2UserRecord.getOidcUserId());
+            authenticatedUser = lookupUser(userLookupParams.getProviderId(), userLookupParams.getLookupUserId());
+            if (authenticatedUser != null) {
+                logger.log(Level.FINE, "OAuth user found for the given bearer token");
+                return authenticatedUser;
+            }
+        } else if (FeatureFlags.API_BEARER_AUTH_USE_BUILTIN_USER_ON_ID_MATCH.enabled() && oAuth2UserRecord.hasBuiltinAttributes()) {
+            authenticatedUser = lookupUser(BuiltinAuthenticationProvider.PROVIDER_ID, oAuth2UserRecord.getUsername());
+            if (authenticatedUser != null) {
+                logger.log(Level.FINE, "Builtin user found for the given bearer token");
+                return authenticatedUser;
+            }
+        }
+
+        return lookupUser(oAuth2UserRecord.getUserRecordIdentifier());
+    }
+
+    /**
+     * Verifies the given OIDC bearer token and retrieves the corresponding OAuth2UserRecord.
+     *
+     * @param bearerToken The OIDC bearer token.
+     * @return An {@link OAuth2UserRecord} containing the user's info.
+     * @throws AuthorizationException If the token is invalid or if no OIDC providers are available.
+     */
+    public OAuth2UserRecord verifyOIDCBearerTokenAndGetOAuth2UserRecord(String bearerToken) throws AuthorizationException {
+        try {
+            BearerAccessToken accessToken = BearerAccessToken.parse(bearerToken);
+            List<OIDCAuthProvider> providers = getAvailableOidcProviders();
+
+            // Ensure at least one OIDC provider is configured to validate the token.
+            if (providers.isEmpty()) {
+                logger.log(Level.WARNING, "Bearer token detected, no OIDC provider configured");
+                throw new AuthorizationException(BundleUtil.getStringFromBundle("authenticationServiceBean.errors.bearerTokenDetectedNoOIDCProviderConfigured"));
+            }
+
+            // Attempt to validate the token with each configured OIDC provider.
+            for (OIDCAuthProvider provider : providers) {
+                try {
+                    // Retrieve OAuth2UserRecord if UserInfo is present
+                    Optional<UserInfo> userInfo = provider.getUserInfo(accessToken);
+                    if (userInfo.isPresent()) {
+                        logger.log(Level.FINE, "Bearer token detected, provider {0} confirmed validity and provided user info", provider.getId());
+                        return provider.getUserRecord(userInfo.get());
+                    }
+                } catch (IOException | OAuth2Exception e) {
+                    logger.log(Level.FINE, "Bearer token detected, provider " + provider.getId() + " indicates an invalid Token, skipping", e);
+                }
+            }
+        } catch (ParseException e) {
+            logger.log(Level.FINE, "Bearer token detected, unable to parse bearer token (invalid Token)", e);
+            throw new AuthorizationException(BundleUtil.getStringFromBundle("authenticationServiceBean.errors.invalidBearerToken"));
+        }
+
+        // If no provider validated the token, throw an authorization exception.
+        logger.log(Level.FINE, "Bearer token detected, yet no configured OIDC provider validated it.");
+        throw new AuthorizationException(BundleUtil.getStringFromBundle("authenticationServiceBean.errors.unauthorizedBearerToken"));
+    }
+
+    /**
+     * Retrieves a list of configured OIDC authentication providers.
+     *
+     * @return A list of available OIDCAuthProviders.
+     */
+    private List<OIDCAuthProvider> getAvailableOidcProviders() {
+        return getAuthenticationProviderIdsOfType(OIDCAuthProvider.class).stream()
+                .map(providerId -> (OIDCAuthProvider) getAuthenticationProvider(providerId))
+                .toList();
+    }
+
+    public OrcidOAuth2AP getOrcidAuthenticationProvider() {
+        return (OrcidOAuth2AP) authProvidersRegistrationService.getOrcidProvider();
+    }
+
+    public AuthenticatedUser lookupUserByOrcid(String orcid) {
+        if (orcid == null || orcid.isEmpty()) {
+            return null;
+        }
+
+        try {
+            TypedQuery<AuthenticatedUser> query = em.createQuery(
+                    "SELECT au FROM AuthenticatedUser au WHERE au.authenticatedOrcid = :orcid",
+                    AuthenticatedUser.class);
+            query.setParameter("orcid", orcid);
+            return query.getSingleResult();
+        } catch (NoResultException e) {
+            return null;
+        } catch (NonUniqueResultException e) {
+            logger.log(Level.WARNING, "Multiple users found with ORCID: " + orcid, e);
+            return null;
+        }
+    }
 }

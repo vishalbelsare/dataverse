@@ -35,9 +35,6 @@ function bind_bsui_components(){
     // Sharrre
     sharrre();
     
-    // Custom Popover with HTML content
-    popoverHTML();
-    
     // clipboard.js click to copy
     clickCopyClipboard();
     
@@ -169,7 +166,7 @@ function sharrre(){
  */
 function contentTruncate(truncSelector, truncMoreBtn, truncMoreTip, truncLessBtn, truncLessTip){
     // SELECTOR ID FROM PARAMETERS
-    $('#' + truncSelector + ' td > div:first-child').each(function () {
+    $('#' + truncSelector).each(function () {
         
         // add responsive img class to limit width to that of container
         $(this).find('img').attr('class', 'img-responsive');
@@ -179,7 +176,7 @@ function contentTruncate(truncSelector, truncMoreBtn, truncMoreTip, truncLessBtn
         
         if (containerHeight > 250) {
             // ADD A MAX-HEIGHT TO CONTAINER
-            $(this).css({'max-height':'250px','overflow-y':'hidden','position':'relative'});
+            $(this).css({'max-height':'250px','overflow-y':'hidden', 'overflow-x':'hidden', 'position':'relative'});
 
             // BTN LABEL TEXT, ARIA ATTR'S, FROM BUNDLE VIA PARAMETERS
             var readMoreBtn = '<button class="btn btn-link desc-more-link" type="button" data-toggle="tooltip" data-original-title="' + truncMoreTip + '" aria-expanded="false" aria-controls="#' + truncSelector + '">' + truncMoreBtn + '</button>';
@@ -213,7 +210,6 @@ function contentTruncate(truncSelector, truncMoreBtn, truncMoreTip, truncLessBtn
  */
 function checksumTruncate(){
     $('span.checksum-truncate').each(function () {
-        $(this).toggleClass('sr-only').toggleClass('visisble');
         var checksumText = $(this).text();
         var checksumLength = checksumText.length;
         if (checksumLength > 25) {
@@ -411,3 +407,53 @@ function addMenuDelays() {
         });
     });
 }
+
+function scrollToFirstError() {
+    // delay to let other oncomplete scripts finish (like scrollTop(0))
+    setTimeout(function () {
+        // Find all potential error indicators, including PrimeFaces and Bootstrap classes
+        var $errors = $('.ui-message-error, .ui-state-error, .has-error, .ui-message-fatal');
+        
+        // Filter out the main alert at the top if there are field-specific errors
+        var $fieldErrors = $errors.not('.alert-danger .ui-message-error').not('.alert-danger');
+        var $target = $fieldErrors.length > 0 ? $fieldErrors.first() : $errors.first();
+
+        if ($target.length > 0) {
+            // Check if it's inside a collapsed panel
+            var $panel = $target.closest('.collapse:not(.in)');
+            if ($panel.length > 0) {
+                // Find the heading that controls this panel and click it to expand
+                // or just use bootstrap's collapse method
+                $panel.collapse('show');
+                $panel.one('shown.bs.collapse', function () {
+                    $('html, body').animate({
+                        scrollTop: $target.offset().top - 150
+                    }, 500);
+                });
+            } else {
+                $('html, body').animate({
+                    scrollTop: $target.offset().top - 150
+                }, 500);
+            }
+        }
+    }, 250);
+}
+
+$(document).on('pfAjaxComplete', function (e, xhr, settings) {
+    var validationFailed = false;
+    if (xhr && xhr.pfArgs && xhr.pfArgs.validationFailed) {
+        validationFailed = true;
+    } else if (xhr && xhr.responseText && xhr.responseText.indexOf('validationFailed":true') !== -1) {
+        validationFailed = true;
+    }
+
+    if (validationFailed) {
+        scrollToFirstError();
+    }
+});
+
+$(document).ready(function () {
+    if ($('.alert-danger').length > 0 && $('.ui-message-error, .ui-state-error, .has-error').length > 0) {
+        scrollToFirstError();
+    }
+});

@@ -3,20 +3,24 @@ package edu.harvard.iq.dataverse.repositorystorageabstractionlayer;
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.locality.StorageSite;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
-import edu.harvard.iq.dataverse.util.SystemConfig;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
 
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+
+@Deprecated(forRemoval = true, since = "2024-07-07")
 public class RepositoryStorageAbstractionLayerUtil {
 
     private static final Logger logger = Logger.getLogger(RepositoryStorageAbstractionLayerUtil.class.getCanonicalName());
 
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     public static List<RsyncSite> getRsyncSites(Dataset dataset, JsonArray rsalSitesAsJson) {
         List<RsyncSite> rsalSites = new ArrayList<>();
         boolean leafDirectoryOnly = false;
@@ -30,6 +34,7 @@ public class RepositoryStorageAbstractionLayerUtil {
         return rsalSites;
     }
 
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     static String getLocalDataAccessDirectory(String localDataAccessParentDir, Dataset dataset) {
         if (localDataAccessParentDir == null) {
             localDataAccessParentDir = File.separator + "UNCONFIGURED ( " + SettingsServiceBean.Key.LocalDataAccessPath + " )";
@@ -38,6 +43,7 @@ public class RepositoryStorageAbstractionLayerUtil {
         return localDataAccessParentDir + File.separator + getDirectoryContainingTheData(dataset, leafDirectoryOnly);
     }
 
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     static String getVerifyDataCommand(Dataset dataset) {
         boolean leafDirectoryOnly = true;
         // TODO: if "files.sha" is defined somewhere, use it.
@@ -51,6 +57,7 @@ public class RepositoryStorageAbstractionLayerUtil {
      * leafDirectoryOnly. See also
      * http://www.gnu.org/software/coreutils/manual/html_node/basename-invocation.html
      */
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     public static String getDirectoryContainingTheData(Dataset dataset, boolean leafDirectoryOnly) {
         /**
          * FIXME: What if there is more than one package in the dataset?
@@ -81,8 +88,9 @@ public class RepositoryStorageAbstractionLayerUtil {
      * RSAL or some other "big data" component live for a list of remotes sites
      * to which a particular dataset is replicated to.
      */
+    @Deprecated(forRemoval = true, since = "2024-07-07")
     static JsonArray getStorageSitesAsJson(List<StorageSite> storageSites) {
-        JsonArrayBuilder arraybuilder = Json.createArrayBuilder();
+        JsonArrayBuilder arraybuilder = JsonUtil.createArrayBuilder();
         if (storageSites == null || storageSites.isEmpty()) {
             return arraybuilder.build();
         }
@@ -92,7 +100,7 @@ public class RepositoryStorageAbstractionLayerUtil {
             if (storageSite.isPrimaryStorage()) {
                 countOfPrimarySites++;
             }
-            arraybuilder.add(Json.createObjectBuilder()
+            arraybuilder.add(JsonUtil.createObjectBuilder()
                     .add("fqdn", storageSite.getHostname())
                     .add("name", storageSite.getName()));
         }

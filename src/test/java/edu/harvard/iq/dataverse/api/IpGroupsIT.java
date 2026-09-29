@@ -1,27 +1,32 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
+import edu.harvard.iq.dataverse.util.json.JsonUtil;
+import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static javax.ws.rs.core.Response.Status.OK;
-import static junit.framework.Assert.assertEquals;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.FORBIDDEN;
+import static jakarta.ws.rs.core.Response.Status.OK;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.hamcrest.CoreMatchers.equalTo;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class IpGroupsIT {
-
+/*
+  WARNING: Running this test will creat IP Groups that give access based on any IP address.
+  This will cause other tests that count the number of Collections a user can access to be higher than expected.
+  Since this Test Class is not being run in an automated test suite it isn't an issue.
+ */
     private static final Logger logger = Logger.getLogger(IpGroupsIT.class.getCanonicalName());
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
     }
@@ -48,12 +53,12 @@ public class IpGroupsIT {
 
         Response userWithNoRoles = UtilIT.createRandomUser();
         String userWithNoRolesApiToken = UtilIT.getApiTokenFromResponse(userWithNoRoles);
-        String pathToFile = "src/main/webapp/resources/images/favicondataverse.png";
+        String pathToFile = "src/main/webapp/resources/images/dataverseproject.png";
         Response addResponse = UtilIT.uploadFileViaNative(datasetId.toString(), pathToFile, apiToken);
 
         addResponse.then().assertThat()
                 .body("data.files[0].dataFile.contentType", equalTo("image/png"))
-                .body("data.files[0].label", equalTo("favicondataverse.png"))
+                .body("data.files[0].label", equalTo("dataverseproject.png"))
                 .statusCode(OK.getStatusCode());
 
         Long fileId = JsonPath.from(addResponse.body().asString()).getLong("data.files[0].dataFile.id");
@@ -62,7 +67,7 @@ public class IpGroupsIT {
         Response restrictResponse = UtilIT.restrictFile(fileId.toString(), restrict, apiToken);
         restrictResponse.prettyPrint();
         restrictResponse.then().assertThat()
-                .body("data.message", equalTo("File favicondataverse.png restricted."))
+                .body("data.message", equalTo("File dataverseproject.png restricted."))
                 .statusCode(OK.getStatusCode());
 
         Response publishDataverse = UtilIT.publishDataverseViaNativeApi(dataverseAlias, apiToken);
@@ -116,12 +121,12 @@ public class IpGroupsIT {
         Response downloadFileNoPrivs = UtilIT.downloadFile(fileId.intValue(), userWithNoRolesApiToken);
         assertEquals(FORBIDDEN.getStatusCode(), downloadFileNoPrivs.getStatusCode());
 
-        JsonObjectBuilder ipGroupAllJson = Json.createObjectBuilder();
+        JsonObjectBuilder ipGroupAllJson = JsonUtil.createObjectBuilder();
         String uniqueIdentifierForIpGroup = "ipGroup" + UtilIT.getRandomIdentifier();
         ipGroupAllJson.add("alias", uniqueIdentifierForIpGroup);
         ipGroupAllJson.add("name", "An IP Group that matches all IP addresses and has a unique identifier.");
-        ipGroupAllJson.add("ranges", Json.createArrayBuilder()
-                .add(Json.createArrayBuilder()
+        ipGroupAllJson.add("ranges", JsonUtil.createArrayBuilder()
+                .add(JsonUtil.createArrayBuilder()
                         .add("0.0.0.0")
                         .add("255.255.255.255")
                 ));
@@ -146,6 +151,17 @@ public class IpGroupsIT {
         // Should get an OK response (able to download file) based on IP Group membership. No API token.
         assertEquals(OK.getStatusCode(), anonDownload.getStatusCode());
 
+        grantIpAll = UtilIT.grantRoleOnDataverse(dataverseAlias, DataverseRole.CURATOR.toString(), ipGroupIdentifierString, apiToken);
+        grantIpAll.prettyPrint();
+        grantIpAll.then().assertThat()
+                .body("data.assignee", equalTo(ipGroupIdentifierString))
+                .body("data._roleAlias", equalTo("curator"))
+                .statusCode(OK.getStatusCode());
+
+        Response collectionsResp = UtilIT.getUserPermittedCollections(username, apiToken, "PublishDataset");
+        collectionsResp.prettyPrint();
+        collectionsResp.then().assertThat()
+                .statusCode(OK.getStatusCode());
     }
 
 }

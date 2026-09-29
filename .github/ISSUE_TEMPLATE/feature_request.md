@@ -1,16 +1,17 @@
 ---
 name: Feature request
 about: Suggest an idea or new feature for the Dataverse software!
-title: 'Feature Request/Idea:'
-labels: ''
+title: 'Feature Request:'
+labels: 'Type: Feature'
 assignees: ''
 
 ---
+
 <!--
 Thank you for contributing to the Dataverse Project through the creation of a feature request!
 
 More information on ideas/feature requests and contributions can be found in the "Contributing to Dataverse" page:
-https://github.com/IQSS/dataverse/blob/develop/CONTRIBUTING.md#ideasfeature-requests
+https://guides.dataverse.org/en/latest/contributor/index.html
 
 Please fill out as much of the template as you can.
 Start below this comment section.
@@ -32,4 +33,7 @@ Start below this comment section.
 **Any brand new behavior do you want to add to Dataverse?**
 
 
-**Any related open or closed issues to this feature request?**
+**Any open or closed issues related to this feature request?**
+
+**Are you thinking about creating a pull request for this feature?**  
+Help is always welcome, is this feature something you or your organization plan to implement?
